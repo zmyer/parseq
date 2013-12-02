@@ -23,6 +23,8 @@ import com.linkedin.parseq.internal.SerialExecutionException;
 import com.linkedin.parseq.internal.SerialExecutor;
 import com.linkedin.parseq.internal.PlanContext;
 import com.linkedin.parseq.internal.TaskLogger;
+import com.linkedin.parseq.internal.trace.TraceCapturerImpl;
+import com.linkedin.parseq.internal.trace.TraceCapturer;
 import com.linkedin.parseq.promise.Promise;
 import com.linkedin.parseq.promise.PromiseListener;
 import org.slf4j.ILoggerFactory;
@@ -132,9 +134,12 @@ public class Engine
 
     final long planId = NEXT_PLAN_ID.getAndIncrement();
     final Logger planLogger = _loggerFactory.getLogger(LOGGER_BASE + ":planClass=" + task.getClass().getName());
-    final TaskLogger taskLogger = new TaskLogger(task, _allLogger, _rootLogger, planLogger);
+    final TaskLogger taskLogger = new TaskLogger(planId, task, _allLogger, _rootLogger, planLogger);
+    final TraceCapturer traceCapturer = new TraceCapturerImpl(task);
+    final int taskId = traceCapturer.registerTask(task);
     final Executor taskExecutor = new SerialExecutor(_taskExecutor, new CancelPlanRejectionHandler(task));
-    new ContextImpl(new PlanContext(planId, this, taskExecutor, _timerExecutor, taskLogger), task).runTask();
+    final ContextImpl context = new ContextImpl(new PlanContext(planId, this, taskExecutor, _timerExecutor, traceCapturer, taskLogger), task, taskId);
+    context.runTask();
 
     InternalUtil.unwildcardTask(task).addListener(_taskDoneListener);
   }

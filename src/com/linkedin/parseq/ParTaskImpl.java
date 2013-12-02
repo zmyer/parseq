@@ -82,7 +82,7 @@ import java.util.List;
         {
           if (task.isFailed())
           {
-            if (allEarlyFinish && ResultType.fromTask(task) != ResultType.EARLY_FINISH)
+            if (allEarlyFinish && task.getShallowTrace().getResultType() != ResultType.EARLY_FINISH)
             {
               allEarlyFinish = false;
             }

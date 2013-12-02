@@ -80,7 +80,7 @@ public class ShallowTrace
       case EARLY_FINISH:
         if (value != null)
         {
-          throw new IllegalArgumentException("value cannot be set if the task is finished early");
+            throw new IllegalArgumentException("value cannot be set if the task is finished early");
         }
         ArgumentUtil.notNull(startNanos, "startNanos");
         ArgumentUtil.notNull(pendingNanos, "pendingNanos");
@@ -93,19 +93,13 @@ public class ShallowTrace
         ArgumentUtil.notNull(endNanos, "endNanos");
         break;
       case UNFINISHED:
-        if (value != null)
+       if (value != null)
         {
           throw new IllegalArgumentException("value cannot be set if the task is UNFINISHED");
         }
         break;
       default:
         throw new IllegalArgumentException("Unexpected result type: " + resultType);
-    }
-
-    if (startNanos != null && resultType != ResultType.UNFINISHED)
-    {
-      ArgumentUtil.notNull(pendingNanos, "pendingNanos");
-      ArgumentUtil.notNull(endNanos, "endNanos");
     }
   }
 
