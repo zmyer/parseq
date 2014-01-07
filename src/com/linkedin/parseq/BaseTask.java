@@ -464,7 +464,7 @@ public abstract class BaseTask<T> implements Task<T>, Promise<T>
         {
           taskListener.onUpdate(this, trace);
         }
-        catch (Exception e)
+        catch (Throwable e)
         {
           LOG.warn("Promise listener threw exception. Ignoring and continuing. Listener: " + taskListener, e);
         }
@@ -478,7 +478,7 @@ public abstract class BaseTask<T> implements Task<T>, Promise<T>
       {
         promiseListener.onResolved(this);
       }
-      catch (Exception e)
+      catch (Throwable e)
       {
         LOG.warn("Promise listener threw exception. Ignoring and continuing. Listener: " + promiseListener, e);
       }
@@ -496,7 +496,7 @@ public abstract class BaseTask<T> implements Task<T>, Promise<T>
         {
           taskListener.onUpdate(this, trace);
         }
-        catch (Exception e)
+        catch (Throwable e)
         {
           LOG.warn("Promise listener threw exception. Ignoring and continuing. Listener: " + taskListener, e);
         }

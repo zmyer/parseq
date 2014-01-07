@@ -94,7 +94,7 @@ import java.util.concurrent.atomic.AtomicReference;
   {
     if (isDone())
     {
-      listener.onResolved(this);
+      safeNotifyListener(listener);
       return;
     }
 
@@ -140,14 +140,19 @@ import java.util.concurrent.atomic.AtomicReference;
     PromiseListener<T> listener;
     while((listener = _listeners.poll()) != null)
     {
-      try
-      {
-        listener.onResolved(this);
-      }
-      catch (Throwable e)
-      {
-        LOGGER.warn("An exception was thrown by listener: " + listener.getClass(), e);
-      }
+      safeNotifyListener(listener);
+    }
+  }
+
+  private void safeNotifyListener(PromiseListener<T> listener)
+  {
+    try
+    {
+      listener.onResolved(this);
+    }
+    catch (Throwable e)
+    {
+      LOGGER.warn("An exception was thrown by listener: " + listener.getClass(), e);
     }
   }
 
