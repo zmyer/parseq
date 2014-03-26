@@ -460,14 +460,7 @@ public abstract class BaseTask<T> implements Task<T>, Promise<T>
       TaskListener taskListener;
       while ((taskListener = _taskListeners.poll()) != null)
       {
-        try
-        {
-          taskListener.onUpdate(this, trace);
-        }
-        catch (Throwable e)
-        {
-          LOG.warn("Promise listener threw exception. Ignoring and continuing. Listener: " + taskListener, e);
-        }
+        notifyTaskListener(taskListener, trace);
       }
     }
 
@@ -492,15 +485,20 @@ public abstract class BaseTask<T> implements Task<T>, Promise<T>
       final ShallowTrace trace = buildShallowTrace(state);
       for (TaskListener taskListener : _taskListeners)
       {
-        try
-        {
-          taskListener.onUpdate(this, trace);
-        }
-        catch (Throwable e)
-        {
-          LOG.warn("Promise listener threw exception. Ignoring and continuing. Listener: " + taskListener, e);
-        }
+        notifyTaskListener(taskListener, trace);
       }
+    }
+  }
+
+  private void notifyTaskListener(TaskListener taskListener, ShallowTrace trace)
+  {
+    try
+    {
+      taskListener.onUpdate(this, trace);
+    }
+    catch (Throwable e)
+    {
+      LOG.warn("Task listener threw exception. Ignoring and continuing. Listener: " + taskListener, e);
     }
   }
 
