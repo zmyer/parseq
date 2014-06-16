@@ -16,14 +16,17 @@
 
 package com.linkedin.parseq;
 
+import java.util.Collection;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.Function;
+
 import com.linkedin.parseq.internal.TaskLogger;
 import com.linkedin.parseq.promise.Promise;
 import com.linkedin.parseq.trace.Related;
 import com.linkedin.parseq.trace.ShallowTrace;
 import com.linkedin.parseq.trace.Trace;
-
-import java.util.Collection;
-import java.util.Set;
 
 /**
  * A task represents a deferred execution that also contains its resulting
@@ -107,5 +110,94 @@ public interface Task<T> extends Promise<T>, Cancellable
    * @return the set of relationships of this task.
    */
   Set<Related<Task<?>>> getRelationships();
+
+  default <R> Task<R> map(final String desc, final Function<T, R> f) {
+    final Task<T> that = this;
+    return Tasks.seq(that, Tasks.callable("map: " + desc, (ThrowableCallable<R>) () -> f.apply(that.get())));
+  }
+
+  default <R> Task<R> flatMap(final String desc, final Function<T, Task<R>> f) {
+    final Task<T> that = this;
+    return Tasks.seq(that, new BaseTask<R>("flatMap: " + desc) {
+      @Override
+      protected Promise<R> run(Context context) throws Throwable {
+        Task<R> fm = f.apply(that.get());
+        context.run(fm);
+        return fm;
+      }
+    });
+  }
+
+  default Task<T> andThen(final String desc, final Consumer<T> m) {
+    final Task<T> that = this;
+    return Tasks.seq(that, Tasks.callable("andThen: " + desc, (ThrowableCallable<T>) () -> {
+      T value = that.get();
+      m.accept(value);
+      return value;
+    }));
+  }
+
+  default Task<T> recover(final String desc, final Function<Throwable, T> f) {
+    final Task<T> that = this;
+    return Tasks.seq(that, Tasks.callable("recover: " + desc, (ThrowableCallable<T>) () -> {
+      if (that.isFailed()) {
+        return f.apply(that.getError());
+      } else {
+        return that.get();
+      }
+    }));
+  }
+
+  default Task<T> recoverWith(final String desc, final Function<Throwable, Task<T>> f) {
+    final Task<T> that = this;
+    return Tasks.seq(that, new BaseTask<T>("recoverWith: " + desc) {
+      @Override
+      protected Promise<T> run(Context context) throws Throwable {
+        if (that.isFailed()) {
+          Task<T> recovery = f.apply(that.getError());
+          context.run(recovery);
+          return recovery;
+        } else {
+          return that;
+        }
+      }
+    });
+  }
+
+  default Task<T> fallBackTo(final String desc, final Task<T> t) {
+    final Task<T> that = this;
+    return Tasks.seq(that, new BaseTask<T>("fallBackTo: " + desc) {
+      @Override
+      protected Promise<T> run(Context context) throws Throwable {
+        if (that.isFailed()) {
+          Task<T> recovery = t.recoverWith("fallBackRecovery", x -> that);
+          context.run(recovery);
+          return recovery;
+        } else {
+          return that;
+        }
+      }
+    });
+  }
+
+  /**
+   * Creates a new task that wraps this task. If this task finishes
+   * before the timeout occurs then wrapped task takes on the value of this task.
+   * If this task does not complete in the given time then wrapped task will
+   * have a TimeoutException. The wrapped task may be cancelled when a timeout
+   * occurs.
+   *
+   * @param name the name of this task
+   * @param time the time to wait before timing out
+   * @param unit the units for the time
+   * @param <T> the value type for the task
+   * @return the new timeout task
+   * @see #timeoutWithError(long, java.util.concurrent.TimeUnit)
+   */
+  default Task<T> timeoutWithError(final String desc,
+                                             final long time, final TimeUnit unit)
+  {
+    return new TimeoutWithErrorTask<T>(desc, time, unit, this);
+  }
 
 }
