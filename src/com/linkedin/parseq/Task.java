@@ -16,14 +16,21 @@
 
 package com.linkedin.parseq;
 
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import com.linkedin.parseq.internal.InternalUtil;
 import com.linkedin.parseq.internal.TaskLogger;
 import com.linkedin.parseq.promise.Promise;
+import com.linkedin.parseq.promise.PromiseListener;
+import com.linkedin.parseq.promise.Promises;
+import com.linkedin.parseq.promise.SettablePromise;
 import com.linkedin.parseq.trace.Related;
 import com.linkedin.parseq.trace.ShallowTrace;
 import com.linkedin.parseq.trace.Trace;
@@ -192,12 +199,37 @@ public interface Task<T> extends Promise<T>, Cancellable
    * @param unit the units for the time
    * @param <T> the value type for the task
    * @return the new timeout task
-   * @see #timeoutWithError(long, java.util.concurrent.TimeUnit)
    */
-  default Task<T> timeoutWithError(final String desc,
+  default Task<T> within(final String desc,
                                              final long time, final TimeUnit unit)
   {
     return new TimeoutWithErrorTask<T>(desc, time, unit, this);
+  }
+
+  default <R, U> Task<U> join(final String desc, final Task<R> t, BiFunction<T, R, U> f) {
+    final Task<T> that = this;
+    return new BaseTask<U>("join: " + desc) {
+      @Override
+      protected Promise<? extends U> run(Context context) throws Throwable {
+        final SettablePromise<U> result = Promises.settable();
+        final PromiseListener<?> listener = x -> {
+          if (!that.isFailed() && !t.isFailed()) {
+            result.done(f.apply(that.get(), t.get()));
+          }
+          else if (that.isFailed() && t.isFailed()) {
+            result.fail(new MultiException("Multiple errors in 'join' task.", Arrays.asList(that.getError(), t.getError())));
+          } else if (that.isFailed()) {
+            result.fail(that.getError());
+          } else {
+            result.fail(t.getError());
+          }
+        };
+        InternalUtil.after(listener, new Task<?>[]{ that, t});
+        context.run(that);
+        context.run(t);
+        return result;
+      }
+    };
   }
 
 }

@@ -60,6 +60,11 @@ public class ExampleUtil
     return callService("fetch[url=" + url + "]", httpClient, new SimpleMockRequest<String>(latency, "HTTP response for " + url));
   }
 
+  public static Task<String> fetchUrl(final MockService<String> httpClient, final String url, final long latency) {
+    return callService("fetch[url=" + url + "]", httpClient, new SimpleMockRequest<String>(latency,
+        "HTTP response for " + url));
+  }
+
   public static Task<String> fetch404Url(final MockService<String> httpClient,
                                          final String url)
   {
