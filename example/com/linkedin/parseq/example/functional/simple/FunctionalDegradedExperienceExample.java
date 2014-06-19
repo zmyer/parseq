@@ -11,6 +11,9 @@ import com.linkedin.parseq.example.common.AbstractExample;
 import com.linkedin.parseq.example.common.ExampleUtil;
 import com.linkedin.parseq.example.common.MockService;
 
+/**
+ * @author Jaroslaw Odzga (jodzga@linkedin.com)
+ */
 public class FunctionalDegradedExperienceExample extends AbstractExample
 {
   public static void main(String[] args) throws Exception

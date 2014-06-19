@@ -18,9 +18,16 @@ package com.linkedin.parseq;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
 
 /**
  * This class provides a set of factory methods for create common
@@ -435,5 +442,42 @@ public class Tasks
       taskList.add(typedTask);
     }
     return par(taskList);
+  }
+
+  /**
+   * Returns a Collector that accumulates number of input {@code Task<T>} into a
+   * new {@code ParTask<T>}. The resulting parallel Task is resolved with the
+   * {@code List<T>} containing results of all input Tasks.
+   * @return Collector that accumulates number of input {@code Task<T>} into a
+   * new {@code ParTask<T>}.
+   */
+  public static <T> Collector<Task<T>, List<Task<T>>, ParTask<T>> toPar() {
+    return new Collector<Task<T>, List<Task<T>>, ParTask<T>>() {
+
+      @Override
+      public Supplier<List<Task<T>>> supplier() {
+        return (Supplier<List<Task<T>>>) ArrayList::new;
+      }
+
+      @Override
+      public BiConsumer<List<Task<T>>, Task<T>> accumulator() {
+        return (left, right) -> left.add(right);
+      }
+
+      @Override
+      public BinaryOperator<List<Task<T>>> combiner() {
+        return (left, right) -> { left.addAll(right); return left; };
+      }
+
+      @Override
+      public Function<List<Task<T>>, ParTask<T>> finisher() {
+        return tasks -> new ParTaskImpl<>("toPar", tasks);
+      }
+
+      @Override
+      public Set<java.util.stream.Collector.Characteristics> characteristics() {
+        return Collections.emptySet();
+      }
+    };
   }
 }

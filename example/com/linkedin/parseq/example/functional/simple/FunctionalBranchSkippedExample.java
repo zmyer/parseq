@@ -13,6 +13,9 @@ import com.linkedin.parseq.example.common.AbstractExample;
 import com.linkedin.parseq.example.common.MockService;
 import com.linkedin.parseq.example.common.SimpleMockRequest;
 
+/**
+ * @author Jaroslaw Odzga (jodzga@linkedin.com)
+ */
 public class FunctionalBranchSkippedExample extends AbstractExample
 {
   public static void main(String[] args) throws Exception

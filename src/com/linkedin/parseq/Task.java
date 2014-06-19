@@ -18,7 +18,6 @@ package com.linkedin.parseq;
 
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
@@ -44,6 +43,7 @@ import com.linkedin.parseq.trace.Trace;
  * {@link Context}. They should not be run directly.
  *
  * @author Chris Pettitt (cpettitt@linkedin.com)
+ * @author Jaroslaw Odzga (jodzga@linkedin.com)
  */
 public interface Task<T> extends Promise<T>, Cancellable
 {
@@ -117,12 +117,30 @@ public interface Task<T> extends Promise<T>, Cancellable
    * @return the set of relationships of this task.
    */
   Set<Related<Task<?>>> getRelationships();
-
+  
+  /**
+   * Creates a new Task by applying a function to the successful result of this Task.
+   * If this Task is completed with an exception then the new Task will also contain that exception.
+   * 
+   * @param desc description of a mapping function, it will show up in a trace
+   * @param f function to be applied to successful result of this Task.
+   * @return a new Task which will apply given function on result of successful completion of this task
+   */
   default <R> Task<R> map(final String desc, final Function<T, R> f) {
     final Task<T> that = this;
-    return Tasks.seq(that, Tasks.callable("map: " + desc, (ThrowableCallable<R>) () -> f.apply(that.get())));
+    Task<R> result = Tasks.seq(that, Tasks.callable("map: " + desc, (ThrowableCallable<R>) () -> f.apply(that.get())));
+    return result;
   }
 
+  /**
+   * Creates a new Task by applying a function to the successful result of this Task and
+   * returns the result of a function as the new Task.
+   * If this Task is completed with an exception then the new Task will also contain that exception.
+   * 
+   * @param desc description of a mapping function, it will show up in a trace
+   * @param f function to be applied to successful result of this Task.
+   * @return a new Task which will apply given function on result of successful completion of this task
+   */
   default <R> Task<R> flatMap(final String desc, final Function<T, Task<R>> f) {
     final Task<T> that = this;
     return Tasks.seq(that, new BaseTask<R>("flatMap: " + desc) {
@@ -135,6 +153,14 @@ public interface Task<T> extends Promise<T>, Cancellable
     });
   }
 
+  /**
+   * Applies the side-effecting function to the result of this Task, and returns
+   * a new Task with the result of this Task to allow fluent chaining.
+   * 
+   * @param desc description of a side-effecting function, it will show up in a trace
+   * @param m side-effecting function
+   * @return a new Task with the result of this Task
+   */
   default Task<T> andThen(final String desc, final Consumer<T> m) {
     final Task<T> that = this;
     return Tasks.seq(that, Tasks.callable("andThen: " + desc, (ThrowableCallable<T>) () -> {
@@ -144,6 +170,16 @@ public interface Task<T> extends Promise<T>, Cancellable
     }));
   }
 
+  /**
+   * Creates a new Task that will handle any Throwable that this Task might throw
+   * or Task cancellation.
+   * If this task completes successfully, then recovery function is not invoked.
+   * 
+   * @param desc description of a recovery function, it will show up in a trace
+   * @param f recovery function which can complete Task with a value depending on
+   *        Throwable thrown by this Task 
+   * @return a new Task which can recover from Throwable thrown by this Task
+   */
   default Task<T> recover(final String desc, final Function<Throwable, T> f) {
     final Task<T> that = this;
     return Tasks.seq(that, Tasks.callable("recover: " + desc, (ThrowableCallable<T>) () -> {
@@ -155,6 +191,18 @@ public interface Task<T> extends Promise<T>, Cancellable
     }));
   }
 
+  /**
+   * Creates a new Task that will handle any Throwable that this Task might throw
+   * or Task cancellation. If this task completes successfully,
+   * then recovery function is not invoked. Task returned by recovery function
+   * will become a new result of this Task. This means that if recovery function fails,
+   * then result of this task will fail with a Throwable from recovery function.
+   * 
+   * @param desc description of a recovery function, it will show up in a trace
+   * @param f recovery function which can return Task which will become a new result of
+   * this Task
+   * @return a new Task which can recover from Throwable thrown by this Task or cancellation
+   */
   default Task<T> recoverWith(final String desc, final Function<Throwable, Task<T>> f) {
     final Task<T> that = this;
     return Tasks.seq(that, new BaseTask<T>("recoverWith: " + desc) {
@@ -171,13 +219,27 @@ public interface Task<T> extends Promise<T>, Cancellable
     });
   }
 
-  default Task<T> fallBackTo(final String desc, final Task<T> t) {
+  /**
+   * Creates a new Task that will handle any Throwable that this Task might throw
+   * or Task cancellation. If this task completes successfully,
+   * then fall-back function is not invoked. If Task returned by fall-back function
+   * completes successfully with a value, then that value becomes a result of this
+   * Task. If Task returned by fall-back function fails with a Throwable or is cancelled,
+   * then this Task will fail with the original Throwable, not the one coming from
+   * the fall-back function's Task.
+   * 
+   * @param desc description of a recovery function, it will show up in a trace
+   * @param f recovery function which can return Task which will become a new result of
+   * this Task
+   * @return a new Task which can recover from Throwable thrown by this Task or cancellation
+   */
+  default Task<T> fallBackTo(final String desc, final Function<Throwable, Task<T>> f) {
     final Task<T> that = this;
     return Tasks.seq(that, new BaseTask<T>("fallBackTo: " + desc) {
       @Override
       protected Promise<T> run(Context context) throws Throwable {
         if (that.isFailed()) {
-          Task<T> recovery = t.recoverWith("fallBackRecovery", x -> that);
+          Task<T> recovery = f.apply(that.getError()).recoverWith("fallBackRecovery", x -> that);
           context.run(recovery);
           return recovery;
         } else {
@@ -194,18 +256,27 @@ public interface Task<T> extends Promise<T>, Cancellable
    * have a TimeoutException. The wrapped task may be cancelled when a timeout
    * occurs.
    *
-   * @param name the name of this task
+   * @param desc description of a timeout function, it will show up in a trace
    * @param time the time to wait before timing out
    * @param unit the units for the time
    * @param <T> the value type for the task
-   * @return the new timeout task
+   * @return the new Task with a timeout
    */
-  default Task<T> within(final String desc,
-                                             final long time, final TimeUnit unit)
+  default Task<T> within(final String desc, final long time, final TimeUnit unit)
   {
-    return new TimeoutWithErrorTask<T>(desc, time, unit, this);
+    return new TimeoutWithErrorTask<T>("within: " + desc, time, unit, this);
   }
 
+  /**
+   * Combines this Task with passed in Task and calls function on a result of
+   * the two. If either of tasks fail, then resulting task will also fail with
+   * propagated Throwable. If both tasks fail, then resulting task fails with
+   * MultiException containing Throwables from both tasks. 
+   * @param desc description of a join function, it will show up in a trace
+   * @param t Task this Task needs to join with
+   * @param f function to be called on successful completion of both tasks
+   * @return a new Task which will apply given function on result of successful completion of both tasks
+   */
   default <R, U> Task<U> join(final String desc, final Task<R> t, BiFunction<T, R, U> f) {
     final Task<T> that = this;
     return new BaseTask<U>("join: " + desc) {
@@ -231,5 +302,4 @@ public interface Task<T> extends Promise<T>, Cancellable
       }
     };
   }
-
 }
