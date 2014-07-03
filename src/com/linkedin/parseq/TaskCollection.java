@@ -93,4 +93,15 @@ public abstract class TaskCollection<T> {
     });
   }
 
+  public Task<List<T>> takeWhile(final String name, final Predicate<T> predicate) {
+    return createFoldTask("takeWhile: " + name, new ArrayList<T>(), (z, e) -> {
+      if (predicate.test(e)) {
+        z.add(e);
+        return Step.cont(z);
+      } else {
+        return Step.done(z);
+      }
+    });
+  }
+
 }
