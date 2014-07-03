@@ -18,11 +18,13 @@ package com.linkedin.parseq;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import com.linkedin.parseq.internal.InternalUtil;
 import com.linkedin.parseq.internal.TaskLogger;
@@ -117,11 +119,11 @@ public interface Task<T> extends Promise<T>, Cancellable
    * @return the set of relationships of this task.
    */
   Set<Related<Task<?>>> getRelationships();
-  
+
   /**
    * Creates a new Task by applying a function to the successful result of this Task.
    * If this Task is completed with an exception then the new Task will also contain that exception.
-   * 
+   *
    * @param desc description of a mapping function, it will show up in a trace
    * @param f function to be applied to successful result of this Task.
    * @return a new Task which will apply given function on result of successful completion of this task
@@ -136,7 +138,7 @@ public interface Task<T> extends Promise<T>, Cancellable
    * Creates a new Task by applying a function to the successful result of this Task and
    * returns the result of a function as the new Task.
    * If this Task is completed with an exception then the new Task will also contain that exception.
-   * 
+   *
    * @param desc description of a mapping function, it will show up in a trace
    * @param f function to be applied to successful result of this Task.
    * @return a new Task which will apply given function on result of successful completion of this task
@@ -156,16 +158,16 @@ public interface Task<T> extends Promise<T>, Cancellable
   /**
    * Applies the side-effecting function to the result of this Task, and returns
    * a new Task with the result of this Task to allow fluent chaining.
-   * 
+   *
    * @param desc description of a side-effecting function, it will show up in a trace
-   * @param m side-effecting function
+   * @param consumer side-effecting function
    * @return a new Task with the result of this Task
    */
-  default Task<T> andThen(final String desc, final Consumer<T> m) {
+  default Task<T> andThen(final String desc, final Consumer<T> consumer) {
     final Task<T> that = this;
     return Tasks.seq(that, Tasks.callable("andThen: " + desc, (ThrowableCallable<T>) () -> {
       T value = that.get();
-      m.accept(value);
+      consumer.accept(value);
       return value;
     }));
   }
@@ -174,10 +176,10 @@ public interface Task<T> extends Promise<T>, Cancellable
    * Creates a new Task that will handle any Throwable that this Task might throw
    * or Task cancellation.
    * If this task completes successfully, then recovery function is not invoked.
-   * 
+   *
    * @param desc description of a recovery function, it will show up in a trace
    * @param f recovery function which can complete Task with a value depending on
-   *        Throwable thrown by this Task 
+   *        Throwable thrown by this Task
    * @return a new Task which can recover from Throwable thrown by this Task
    */
   default Task<T> recover(final String desc, final Function<Throwable, T> f) {
@@ -197,7 +199,7 @@ public interface Task<T> extends Promise<T>, Cancellable
    * then recovery function is not invoked. Task returned by recovery function
    * will become a new result of this Task. This means that if recovery function fails,
    * then result of this task will fail with a Throwable from recovery function.
-   * 
+   *
    * @param desc description of a recovery function, it will show up in a trace
    * @param f recovery function which can return Task which will become a new result of
    * this Task
@@ -227,7 +229,7 @@ public interface Task<T> extends Promise<T>, Cancellable
    * Task. If Task returned by fall-back function fails with a Throwable or is cancelled,
    * then this Task will fail with the original Throwable, not the one coming from
    * the fall-back function's Task.
-   * 
+   *
    * @param desc description of a recovery function, it will show up in a trace
    * @param f recovery function which can return Task which will become a new result of
    * this Task
@@ -271,7 +273,7 @@ public interface Task<T> extends Promise<T>, Cancellable
    * Combines this Task with passed in Task and calls function on a result of
    * the two. If either of tasks fail, then resulting task will also fail with
    * propagated Throwable. If both tasks fail, then resulting task fails with
-   * MultiException containing Throwables from both tasks. 
+   * MultiException containing Throwables from both tasks.
    * @param desc description of a join function, it will show up in a trace
    * @param t Task this Task needs to join with
    * @param f function to be called on successful completion of both tasks
@@ -301,5 +303,18 @@ public interface Task<T> extends Promise<T>, Cancellable
         return result;
       }
     };
+  }
+
+  default Task<Optional<T>> filter(final String desc, Predicate<? super T> predicate) {
+    final Task<T> that = this;
+    Task<Optional<T>> result =
+        Tasks.seq(
+            that,
+            Tasks.callable("filter: " + desc,
+                (ThrowableCallable<Optional<T>>) () -> {
+
+                  return Optional.of(that.get()).filter(predicate);
+                }));
+    return result;
   }
 }

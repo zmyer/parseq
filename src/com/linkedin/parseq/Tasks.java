@@ -480,4 +480,16 @@ public class Tasks
       }
     };
   }
+
+  //TODO temporary, for testing only
+  public static <T> TaskCollection<T> seqColl(final Iterable<Task<T>> tasks)
+  {
+    return new SeqTaskCollection<T>(tasks);
+  }
+
+  //TODO temporary, for testing only
+  public static <T> TaskCollection<T> parColl(final Iterable<Task<T>> tasks)
+  {
+    return new ParTaskCollection<T>(tasks);
+  }
 }
