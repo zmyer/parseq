@@ -156,6 +156,15 @@ public class ContextImpl implements Context, Cancellable
     }
   }
 
+  /**
+   * TODO
+   * this is a way in from other threads to schedule task on this context
+   *
+   * Streaming idea: remember last task and once there is next task available call after to sequence
+   * tasks.
+   *
+   * for parallel we might need simply runSubTask(right away)
+   */
   @Override
   public After after(final Promise<?>... promises)
   {
