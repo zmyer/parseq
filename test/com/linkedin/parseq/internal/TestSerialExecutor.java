@@ -21,17 +21,18 @@ import com.linkedin.parseq.internal.SerialExecutor.DeactivationListener;
 
 public class TestSerialExecutor {
   private ExecutorService _executorService;
-  private CapturingRejectionHandler _rejectionHandler;
+  private CapturingExceptionHandler _rejectionHandler;
   private SerialExecutor _serialExecutor;
   private CapturingActivityListener _capturingDeactivationListener;
 
   @BeforeMethod
   public void setUp() {
-    _executorService = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(1),
+    _executorService = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1),
         new ThreadPoolExecutor.AbortPolicy());
-    _rejectionHandler = new CapturingRejectionHandler();
+    _rejectionHandler = new CapturingExceptionHandler();
     _capturingDeactivationListener = new CapturingActivityListener();
-    _serialExecutor = new SerialExecutor(_executorService, _rejectionHandler, _capturingDeactivationListener);
+    _serialExecutor = new SerialExecutor(_executorService, _rejectionHandler, _capturingDeactivationListener,
+        new FIFOPriorityQueue<>());
   }
 
   @AfterMethod
@@ -128,7 +129,17 @@ public class TestSerialExecutor {
         _rejectionHandler.getLastError() instanceof RejectedExecutionException);
   }
 
-  private static class NeverEndingRunnable implements Runnable {
+  @Test
+  public void testThrowingRunnable() throws InterruptedException {
+    _serialExecutor.execute(new ThrowingRunnable());
+    assertTrue(_rejectionHandler.await(5, TimeUnit.SECONDS));
+    assertTrue(
+        "Expected " + _rejectionHandler.getLastError() + " to be instance of "
+            + RuntimeException.class.getName(),
+        _rejectionHandler.getLastError() instanceof RuntimeException);
+  }
+
+  private static class NeverEndingRunnable implements PrioritizableRunnable {
     @Override
     public void run() {
       try {
@@ -136,6 +147,13 @@ public class TestSerialExecutor {
       } catch (InterruptedException e) {
         // This is our shutdown mechanism.
       }
+    }
+  }
+
+  private static class ThrowingRunnable implements PrioritizableRunnable {
+    @Override
+    public void run() {
+      throw new RuntimeException();
     }
   }
 
@@ -159,12 +177,12 @@ public class TestSerialExecutor {
     }
   }
 
-  private static class CapturingRejectionHandler implements RejectedSerialExecutionHandler {
+  private static class CapturingExceptionHandler implements UncaughtExceptionHandler {
     private final CountDownLatch _latch = new CountDownLatch(1);
     private volatile Throwable _lastError;
 
     @Override
-    public void rejectedExecution(Throwable error) {
+    public void uncaughtException(Throwable error) {
       _lastError = error;
       _latch.countDown();
     }
@@ -182,7 +200,7 @@ public class TestSerialExecutor {
     }
   }
 
-  private static class LatchedRunnable implements Runnable {
+  private static class LatchedRunnable implements PrioritizableRunnable {
     private final CountDownLatch _latch = new CountDownLatch(1);
 
     @Override

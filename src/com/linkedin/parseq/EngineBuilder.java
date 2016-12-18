@@ -26,6 +26,8 @@ import org.slf4j.LoggerFactory;
 
 import com.linkedin.parseq.internal.ArgumentUtil;
 import com.linkedin.parseq.internal.CachedLoggerFactory;
+import com.linkedin.parseq.internal.FIFOPriorityQueue;
+import com.linkedin.parseq.internal.PlanCompletionListener;
 import com.linkedin.parseq.internal.PlanDeactivationListener;
 
 /**
@@ -45,6 +47,8 @@ public class EngineBuilder {
   private DelayedExecutor _timerScheduler;
   private ILoggerFactory _loggerFactory;
   private PlanDeactivationListener _planDeactivationListener;
+  private PlanCompletionListener _planCompletionListener;
+  private TaskQueueFactory _taskQueueFactory;
 
   private Map<String, Object> _properties = new HashMap<String, Object>();
 
@@ -60,11 +64,23 @@ public class EngineBuilder {
    *
    * @param planDeactivationListener the listener that will be notified when plan
    * becomes deactivated
-   * @return this builder
    */
-  public EngineBuilder setPlanDeactivationListener(PlanDeactivationListener planDeactivationListener) {
+  public void setPlanDeactivationListener(PlanDeactivationListener planDeactivationListener) {
     ArgumentUtil.requireNotNull(planDeactivationListener, "planDeactivationListener");
     _planDeactivationListener = planDeactivationListener;
+    // TODO: should have returned the builder here to make it chainable.
+    // Need to fix in the next major version release.
+  }
+
+  public EngineBuilder setPlanCompletionListener(PlanCompletionListener planCompletionListener) {
+    ArgumentUtil.requireNotNull(planCompletionListener, "planCompletionListener");
+    _planCompletionListener = planCompletionListener;
+    return this;
+  }
+
+  public EngineBuilder setTaskQueueFactory(TaskQueueFactory taskQueueFactory) {
+    ArgumentUtil.requireNotNull(taskQueueFactory, "taskQueueFactory");
+    _taskQueueFactory = taskQueueFactory;
     return this;
   }
 
@@ -150,9 +166,11 @@ public class EngineBuilder {
     if (_timerScheduler == null) {
       throw new IllegalStateException("Timer scheduler is required to create an Engine, but it is not set");
     }
-    return new EngineImpl(_taskExecutor, new IndirectDelayedExecutor(_timerScheduler),
+    return new Engine(_taskExecutor, new IndirectDelayedExecutor(_timerScheduler),
         _loggerFactory != null ? _loggerFactory : new CachedLoggerFactory(LoggerFactory.getILoggerFactory()),
-        _properties, _planDeactivationListener != null ? _planDeactivationListener : planContext -> {});
+        _properties, _planDeactivationListener != null ? _planDeactivationListener : planContext -> {},
+        _planCompletionListener != null ? _planCompletionListener : planContext -> {},
+        _taskQueueFactory != null ? _taskQueueFactory : FIFOPriorityQueue::new);
   }
 
   /**
@@ -164,5 +182,10 @@ public class EngineBuilder {
    */
   private static DelayedExecutor adaptTimerScheduler(final ScheduledExecutorService timerScheduler) {
     return new DelayedExecutorAdapter(timerScheduler);
+  }
+
+  // package private. used in test only.
+  PlanCompletionListener getPlanCompletionListener() {
+    return _planCompletionListener;
   }
 }

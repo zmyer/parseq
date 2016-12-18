@@ -2,7 +2,9 @@
     <info organisation="com.linkedin.parseq" module="parseq"/>
     <configurations>
         <conf name="dist" description="includes JARs, javadoc, and sources" extends="jar, javadoc, sources"/>
-        <conf name="default" description="includes JARs and runtime dependencies" extends="jar, runtime"/>
+        <conf name="master" visibility="public" description="contains only the artifact published by this module itself, with no transitive dependencies"/>
+        <conf name="compile" visibility="public" description="compile time dependencies" extends="build"/>
+        <conf name="default" description="includes JARs and runtime dependencies" extends="jar, runtime, master"/>
         <conf name="build" visibility="private" description="build time dependencies"/>
         <conf name="runtime" description="dependencies required to run parseq" extends="build"/>
         <conf name="jar" description="main artifact with no dependencies"/>
@@ -26,7 +28,7 @@
         <dependency org="org.codehaus.jackson" name="jackson-core-asl" rev="1.8.8" conf="build->default"/>
         <dependency org="org.codehaus.jackson" name="jackson-mapper-asl" rev="1.8.8" conf="build->default"/>
         <dependency org="org.slf4j" name="slf4j-api" rev="1.6.2" conf="build->default"/>
-        <dependency org="org.testng" name="testng" rev="6.4" conf="bootstrap->default; test->default"/>
+        <dependency org="org.testng" name="testng" rev="6.9.9" conf="bootstrap->default; test->default"/>
         <dependency org="org.slf4j" name="slf4j-log4j12" rev="1.6.2" conf="test->default"/>
         <dependency org="net.sourceforge.fmpp" name="fmpp" rev="0.9.15" conf="bootstrap->default"/>
     </dependencies>

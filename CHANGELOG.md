@@ -1,3 +1,60 @@
+v2.6.5
+------
+
+* Added compile and master configurations to parseq's master ivy file to make it interact correctly with ivy files automatically generated from maven's pom files.
+
+v2.6.4
+------
+
+* Fixed unbatching GET from BATCH_GET for complex keys.
+
+v2.6.3
+------
+
+* Handle uncaught exception in SerialExecutor more gracefully
+
+v2.6.2
+------
+
+* Allow user to wire custom TaskQueue implementation into SerialExecutor
+* Refactoring ZKClient in parseq-zk-client contrib project to use interface + builder pattern
+
+v2.6.1
+------
+
+* Fixed bug which caused shareable, batchable tasks to hang
+
+v2.6.0
+------
+
+* Added tasks with retry policy: Task.withRetryPolicy(...)
+
+v2.5.0
+------
+
+* Added _MaxConcurrentPlans_ configuration parameter to Engine that enforces limit on how many concurrent Plans can be executed by Engine.
+
+v2.4.2
+------
+
+* Fixed backwards incompatible changes to Trace and TraceBuilder introduced in 2.4.0.
+
+v2.4.1
+------
+
+* Fixed backwards incompatible change to EngineBuilder introduced in 2.4.0.
+
+v2.4.0
+------
+
+* Added flexible timeout and batching configuration to ParSeqRestClient.
+* Allow adding description to timeout task and TimeoutException.
+* Renamed "timeoutTimer" task to "timeout".
+* Truncating task names to 1024 characters.
+* Decoupled batch size from number of keys in the batch.
+* Added critical path filtering to Tracevis.
+* Added PlanCompletionListener.
+
 v2.3.4
 ------
 
@@ -22,7 +79,7 @@ v2.3.1
 v2.3.0
 ------
 
-* Added Task based batching strategy to parseq-batching contrib project. It allows defining strategy using Task API. 
+* Added Task based batching strategy to parseq-batching contrib project. It allows defining strategy using Task API.
 * Fixed bug in setting system hidden attribute on fused task.
 
 v2.2.0
@@ -94,8 +151,8 @@ v2.0.2
 * Degrade gracefully instead of showing error pop-up when tracevis-server is not accessible (issue #57).
 * Added spellcheck="false" to textarea where JSON trace is pasted (issue #36).
 * Added TraceUtil class to simplify generating JSON trace for a task.
-* Fixed Javadoc to display better in Intellij IDEA. 
-* Internal implementation changes: simplified continuations implementation. 
+* Fixed Javadoc to display better in Intellij IDEA.
+* Internal implementation changes: simplified continuations implementation.
 
 v2.0.1
 ------
@@ -119,7 +176,7 @@ v2.0.0
   - gracefully handle cycles in generated trace
   - traces of all tasks belonging to the same plan are equal
   - tasks trace is a trace of a plan that executed it
-  - tasks value is not included by default it (see Task.setTraceValueSerializer()) 
+  - tasks value is not included by default it (see Task.setTraceValueSerializer())
 * Changed logging API so that it is possible to pass planClass to Engine.run()
 * Improved reliability of promise propagation to avoid stack overflow in large plans (millions of tasks)
 * Introduced blocking() method which allows integration of blocking APIs using multiple dedicated Executors
@@ -188,7 +245,7 @@ v1.3.0
 
 * Improvements to waterfall trace visualization including the ability to
   collapse composite tasks.
-* BaseTask will now catch Throwable instead of Exception. Any Throwable 
+* BaseTask will now catch Throwable instead of Exception. Any Throwable
   caught will fail the task.
 
 v1.2.0

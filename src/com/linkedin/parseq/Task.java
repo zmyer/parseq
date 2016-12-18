@@ -16,9 +16,11 @@
 
 package com.linkedin.parseq;
 
+import com.linkedin.parseq.internal.Prioritizable;
 import java.util.Collection;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -40,6 +42,9 @@ import com.linkedin.parseq.promise.PromisePropagator;
 import com.linkedin.parseq.promise.PromiseTransformer;
 import com.linkedin.parseq.promise.Promises;
 import com.linkedin.parseq.promise.SettablePromise;
+import com.linkedin.parseq.retry.RetriableTask;
+import com.linkedin.parseq.retry.RetryPolicy;
+import com.linkedin.parseq.retry.RetryPolicyBuilder;
 import com.linkedin.parseq.trace.ShallowTrace;
 import com.linkedin.parseq.trace.ShallowTraceBuilder;
 import com.linkedin.parseq.trace.Trace;
@@ -269,14 +274,19 @@ public interface Task<T> extends Promise<T>, Cancellable {
     ArgumentUtil.requireNotNull(func, "function");
     final Task<T> that = this;
     return async("withSideEffect", context -> {
-      final Task<?> sideEffectWrapper = async(desc, ctx -> {
-        Task<?> sideEffect = func.apply(that.get());
-        ctx.run(sideEffect);
-        return sideEffect;
+      final Task<T> sideEffectWrapper = async(desc, ctx -> {
+        SettablePromise<T> promise = Promises.settable();
+        if (!that.isFailed()) {
+          Task<?> sideEffect = func.apply(that.get());
+          ctx.runSideEffect(sideEffect);
+        }
+        Promises.propagateResult(that, promise);
+        return promise;
       });
-      context.after(that).runSideEffect(sideEffectWrapper);
+
+      context.after(that).run(sideEffectWrapper);
       context.run(that);
-      return that;
+      return sideEffectWrapper;
     });
   }
 
@@ -740,6 +750,14 @@ public interface Task<T> extends Promise<T>, Cancellable {
   }
 
   /**
+   * Equivalent to {@code withTimeout(null, time, unit)}.
+   * @see #withTimeout(String, long, TimeUnit)
+   */
+  default Task<T> withTimeout(final long time, final TimeUnit unit) {
+    return withTimeout(null, time, unit);
+  }
+
+  /**
    * Creates a new task that has a timeout associated with it. If this task finishes
    * before the timeout occurs then returned task will be completed with the value of this task.
    * If this task does not complete in the given time then returned task will
@@ -750,18 +768,25 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * </pre></blockquote>
    * <img src="https://raw.githubusercontent.com/linkedin/parseq/master/src/com/linkedin/parseq/doc-files/withTimeout-1.png" height="150" width="318"/>
    *
+   * @param desc description of a timeout. There is no need to put timeout value here because it will be automatically
+   * included. Full description of a timeout will be: {@code "withTimeout " + time + " " + TimeUnitHelper.toString(unit) +
+   * (desc != null ? " " + desc : "")}. It is a good idea to put information that will help understand why the timeout
+   * was specified e.g. if timeout was specified by a configuration, the configuration parameter name would be a useful
+   * information
    * @param time the time to wait before timing out
    * @param unit the units for the time
    * @return the new task with a timeout
    */
-  default Task<T> withTimeout(final long time, final TimeUnit unit) {
+  default Task<T> withTimeout(final String desc, final long time, final TimeUnit unit) {
     final Task<T> that = this;
-    Task<T> withTimeout = async("withTimeout " + time + " " + TimeUnitHelper.toString(unit), ctx -> {
+    final String taskName = "withTimeout " + time + TimeUnitHelper.toString(unit) +
+        (desc != null ? " " + desc : "");
+    Task<T> withTimeout = async(taskName, ctx -> {
       final AtomicBoolean committed = new AtomicBoolean();
       final SettablePromise<T> result = Promises.settable();
-      final Task<?> timeoutTask = Task.action("timeoutTimer", () -> {
+      final Task<?> timeoutTask = Task.action("timeout", () -> {
         if (committed.compareAndSet(false, true)) {
-          result.fail(Exceptions.TIMEOUT_EXCEPTION);
+          result.fail(Exceptions.timeoutException(taskName));
         }
       } );
       //timeout tasks should run as early as possible
@@ -772,7 +797,6 @@ public interface Task<T> extends Promise<T>, Cancellable {
           Promises.propagateResult(that, result);
         }
       } );
-
       //we want to schedule this task as soon as possible
       //because timeout timer has started ticking
       that.setPriority(Priority.MAX_PRIORITY);
@@ -1081,6 +1105,13 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * executed on specified {@link Executor}. It means that callable
    * does not get any special memory consistency guarantees and should not
    * attempt to use shared state.
+   * <p>
+   * In order to avoid creating tasks that never complete the Executor passed in as a
+   * parameter <b>must</b> signal execution rejection by throwing an exception.
+   * <p>
+   * In order to prevent blocking ParSeq threads the Executor passed in as a
+   * parameter <b>must not</b> use {@link ThreadPoolExecutor.CallerRunsPolicy}
+   * as a rejection policy.
    *
    * @param <T> the type of the return value for this task
    * @param name a name that describes the task, it will show up in a trace
@@ -1128,7 +1159,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * </pre></blockquote>
    *
    * If any of tasks passed in as a parameters fails then returned task will also fail immediately.
-   * In this case returned task will be resolved with error from the first of failing tasks.
+   * In this case returned task will be resolved with error from the first of failing tasks and other
+   * tasks will be cancelled (if possible).
    * <p>
    * @return task that will run given tasks in parallel
    */
@@ -1153,7 +1185,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * </pre></blockquote>
    *
    * If any of tasks passed in as a parameters fails then returned task will also fail immediately.
-   * In this case returned task will be resolved with error from the first of failing tasks.
+   * In this case returned task will be resolved with error from the first of failing tasks and other
+   * tasks will be cancelled (if possible).
    * <p>
    * @return task that will run given tasks in parallel
    */
@@ -1180,7 +1213,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * </pre></blockquote>
    *
    * If any of tasks passed in as a parameters fails then returned task will also fail immediately.
-   * In this case returned task will be resolved with error from the first of failing tasks.
+   * In this case returned task will be resolved with error from the first of failing tasks and other
+   * tasks will be cancelled (if possible).
    * <p>
    * @return task that will run given tasks in parallel
    */
@@ -1208,7 +1242,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * </pre></blockquote>
    *
    * If any of tasks passed in as a parameters fails then returned task will also fail immediately.
-   * In this case returned task will be resolved with error from the first of failing tasks.
+   * In this case returned task will be resolved with error from the first of failing tasks and other
+   * tasks will be cancelled (if possible).
    * <p>
    * @return task that will run given tasks in parallel
    */
@@ -1237,7 +1272,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * </pre></blockquote>
    *
    * If any of tasks passed in as a parameters fails then returned task will also fail immediately.
-   * In this case returned task will be resolved with error from the first of failing tasks.
+   * In this case returned task will be resolved with error from the first of failing tasks and other
+   * tasks will be cancelled (if possible).
    * <p>
    * @return task that will run given tasks in parallel
    */
@@ -1267,7 +1303,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * </pre></blockquote>
    *
    * If any of tasks passed in as a parameters fails then returned task will also fail immediately.
-   * In this case returned task will be resolved with error from the first of failing tasks.
+   * In this case returned task will be resolved with error from the first of failing tasks and other
+   * tasks will be cancelled (if possible).
    * <p>
    * @return task that will run given tasks in parallel
    */
@@ -1299,7 +1336,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * </pre></blockquote>
    *
    * If any of tasks passed in as a parameters fails then returned task will also fail immediately.
-   * In this case returned task will be resolved with error from the first of failing tasks.
+   * In this case returned task will be resolved with error from the first of failing tasks and other
+   * tasks will be cancelled (if possible).
    * <p>
    * @return task that will run given tasks in parallel
    */
@@ -1332,7 +1370,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * </pre></blockquote>
    *
    * If any of tasks passed in as a parameters fails then returned task will also fail immediately.
-   * In this case returned task will be resolved with error from the first of failing tasks.
+   * In this case returned task will be resolved with error from the first of failing tasks and other
+   * tasks will be cancelled (if possible).
    * <p>
    * @return task that will run given tasks in parallel
    */
@@ -1350,6 +1389,63 @@ public interface Task<T> extends Promise<T>, Cancellable {
     ArgumentUtil.requireNotNull(task9, "task9");
     return new Par9Task<T1, T2, T3, T4, T5, T6, T7, T8, T9>("par9", task1, task2, task3, task4, task5, task6, task7,
         task8, task9);
+  }
+
+  /**
+   * Equivalent to {@code withRetryPolicy("operation", policy, taskSupplier)}.
+   * @see #withRetryPolicy(String, RetryPolicy, Callable)
+   */
+  public static <T> Task<T> withRetryPolicy(RetryPolicy policy, Callable<Task<T>> taskSupplier) {
+    return withRetryPolicy("operation", policy, taskSupplier);
+  }
+
+  /**
+   * Equivalent to {@code withRetryPolicy("operation", policy, taskSupplier)}.
+   * @see #withRetryPolicy(String, RetryPolicy, Callable)
+   */
+  public static <T> Task<T> withRetryPolicy(RetryPolicy policy, Function1<Integer, Task<T>> taskSupplier) {
+    return withRetryPolicy("operation", policy, taskSupplier);
+  }
+
+  /**
+   * Creates a new task that will run and potentially retry task returned
+   * by a {@code taskSupplier}. Use {@link RetryPolicyBuilder} to create desired
+   * retry policy.
+   * <p>
+   * NOTE: using tasks with retry can have significant performance implications. For example, HTTP request may
+   * failed due to server overload and retrying request may prevent server from recovering. In this example
+   * a better approach is the opposite: decrease number of requests to the server unit it is fully recovered.
+   * Please make sure you have considered why the first task failed and why is it reasonable to expect retry task
+   * to complete successfully. It is also highly recommended to specify reasonable backoff and termination conditions.
+   *
+   * @param name A name of the task that needs to be retried.
+   * @param policy Retry policy that will control this task's retry behavior.
+   * @param taskSupplier A task generator function.
+   * @param <T> the type of the return value for this task
+   */
+  public static <T> Task<T> withRetryPolicy(String name, RetryPolicy policy, Callable<Task<T>> taskSupplier) {
+    return withRetryPolicy(name, policy, attempt -> taskSupplier.call());
+  }
+
+  /**
+   * Creates a new task that will run and potentially retry task returned
+   * by a {@code taskSupplier}. Use {@link RetryPolicyBuilder} to create desired
+   * retry policy.
+   * <p>
+   * NOTE: using tasks with retry can have significant performance implications. For example, HTTP request may
+   * failed due to server overload and retrying request may prevent server from recovering. In this example
+   * a better approach is the opposite: decrease number of requests to the server unit it is fully recovered.
+   * Please make sure you have considered why the first task failed and why is it reasonable to expect retry task
+   * to complete successfully. It is also highly recommended to specify reasonable backoff and termination conditions.
+   *
+   * @param name A name of the task that needs to be retried.
+   * @param policy Retry policy that will control this task's retry behavior.
+   * @param taskSupplier A task generator function. It will receive a zero-based attempt number as a parameter.
+   * @param <T> the type of the return value for this task
+   * @see RetryPolicyBuilder
+   */
+  public static <T> Task<T> withRetryPolicy(String name, RetryPolicy policy, Function1<Integer, Task<T>> taskSupplier) {
+    return RetriableTask.withRetryPolicy(name, policy, taskSupplier);
   }
 
 }
