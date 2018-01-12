@@ -18,6 +18,7 @@ package com.linkedin.restli.client;
 
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,15 +52,19 @@ public class ParSeqRestClient extends BatchingStrategy<RequestGroup, RestRequest
 
   private static final Logger LOGGER = LoggerFactory.getLogger(ParSeqRestClient.class);
 
-  private final RestClient _restClient;
+  private final Client _client;
   private final BatchingMetrics _batchingMetrics = new BatchingMetrics();
   private final RequestConfigProvider _clientConfig;
+  private final Function<Request<?>, RequestContext> _requestContextProvider;
 
-  ParSeqRestClient(final RestClient restClient, final RequestConfigProvider config) {
-    ArgumentUtil.requireNotNull(restClient, "restClient");
+  ParSeqRestClient(final Client client, final RequestConfigProvider config,
+      Function<Request<?>, RequestContext> requestContextProvider) {
+    ArgumentUtil.requireNotNull(client, "client");
     ArgumentUtil.requireNotNull(config, "config");
-    _restClient = restClient;
+    ArgumentUtil.requireNotNull(config, "requestContextProvider");
+    _client = client;
     _clientConfig = config;
+    _requestContextProvider = requestContextProvider;
   }
 
   /**
@@ -68,21 +73,22 @@ public class ParSeqRestClient extends BatchingStrategy<RequestGroup, RestRequest
    * @deprecated Please use {@link ParSeqRestliClientBuilder} to create instances.
    */
   @Deprecated
-  public ParSeqRestClient(final RestClient restClient) {
-    ArgumentUtil.requireNotNull(restClient, "restClient");
-    _restClient = restClient;
+  public ParSeqRestClient(final Client client) {
+    ArgumentUtil.requireNotNull(client, "client");
+    _client = client;
     _clientConfig = RequestConfigProvider.build(new ParSeqRestliClientConfigBuilder().build(), () -> Optional.empty());
+    _requestContextProvider = request -> new RequestContext();
   }
 
   @Override
   public <T> Promise<Response<T>> sendRequest(final Request<T> request) {
-    return sendRequest(request, new RequestContext());
+    return sendRequest(request, _requestContextProvider.apply(request));
   }
 
   @Override
   public <T> Promise<Response<T>> sendRequest(final Request<T> request, final RequestContext requestContext) {
     final SettablePromise<Response<T>> promise = Promises.settable();
-    _restClient.sendRequest(request, requestContext, new PromiseCallbackAdapter<T>(promise));
+    _client.sendRequest(request, requestContext, new PromiseCallbackAdapter<T>(promise));
     return promise;
   }
 
@@ -110,7 +116,7 @@ public class ParSeqRestClient extends BatchingStrategy<RequestGroup, RestRequest
 
   @Override
   public <T> Task<Response<T>> createTask(final Request<T> request) {
-    return createTask(request, new RequestContext());
+    return createTask(request, _requestContextProvider.apply(request));
   }
 
   @Override
@@ -129,7 +135,7 @@ public class ParSeqRestClient extends BatchingStrategy<RequestGroup, RestRequest
 
   @Override
   public <T> Task<Response<T>> createTask(Request<T> request, RequestConfigOverrides configOverrides) {
-    return createTask(request, new RequestContext(), configOverrides);
+    return createTask(request,  _requestContextProvider.apply(request), configOverrides);
   }
 
   @Override
@@ -195,7 +201,7 @@ public class ParSeqRestClient extends BatchingStrategy<RequestGroup, RestRequest
     if (group instanceof GetRequestGroup) {
       _batchingMetrics.recordBatchSize(group.getBaseUriTemplate(), batch.batchSize());
     }
-    group.executeBatch(_restClient, batch);
+    group.executeBatch(_client, batch, _requestContextProvider);
   }
 
   @Override

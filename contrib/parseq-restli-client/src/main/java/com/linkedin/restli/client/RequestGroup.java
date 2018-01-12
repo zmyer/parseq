@@ -16,8 +16,11 @@
 
 package com.linkedin.restli.client;
 
+import java.util.function.Function;
+
 import com.linkedin.data.template.RecordTemplate;
 import com.linkedin.parseq.batching.Batch;
+import com.linkedin.r2.message.RequestContext;
 import com.linkedin.restli.client.config.RequestConfig;
 import com.linkedin.restli.common.ResourceMethod;
 
@@ -40,8 +43,8 @@ interface RequestGroup {
         && config.isBatchingEnabled().getValue();
   }
 
-  <RT extends RecordTemplate> void executeBatch(RestClient restClient,
-      Batch<RestRequestBatchKey, Response<Object>> batch);
+  <RT extends RecordTemplate> void executeBatch(Client client,
+      Batch<RestRequestBatchKey, Response<Object>> batch, Function<Request<?>, RequestContext> requestContextProvider);
 
   <K, V> String getBatchName(Batch<K, V> batch);
 

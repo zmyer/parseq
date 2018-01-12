@@ -1,3 +1,114 @@
+v2.6.24
+------
+
+* Adds back #setRestClient method with RestClient as the parameter to maintain binary backward-compatibility.
+
+v2.6.23
+------
+
+* Change the underlying client of ParSeqRestClient from the RestClient class to the Client interface.
+
+v2.6.22
+------
+
+* Improved generation of task descriptions for deeply nested structures, see issue #145 on Github.
+
+v2.6.21
+------
+
+* Include description of the task that timed out in TimeoutException created by Task.withTimeout().
+
+v2.6.20
+------
+
+* Fixed bug which caused logging idle threads as busy ones in Execution Monitoring.
+
+v2.6.19
+------
+
+* Improved ExecutionMonitor by taking into consideration shortest observable delta between scheduled wake up and actual wake up.
+
+v2.6.18
+------
+
+* Added Execution Monitoring - mechanism which allows detecting long running tasks and potential programming bugs.
+
+v2.6.17
+------
+
+* Added ParSeqUnitTestHelper.tearDown(int, TimeUnit) method which waits for specified amount of time for all currently running plans to complete.
+
+v2.6.16
+------
+
+* Bug fix: Removing ea agents jar from being shaded as part of parseq-lambda-names jar.
+* Created ParSeqUnitTestHelper helper class for unit tests so that it is not necessary to extend BaseEngineTest class.
+* Created BaseEngineParTest for parallel unit tests.
+* Added more unique set up and tear down methods in BaseEngineTest to avoid accidental override in subclasses.
+
+v2.6.15
+------
+
+* Improved exception in case when function that is supposed return a Task instance returns null, see issue #105. From now on exception's stack trace and message will inform about the root cause of a problem.
+* Increased trace size limit from 4096 to 65536. Trace size limit is a heuristic that prevents allocating huge amount of memory for the purpose of tracing.
+* Publish parseq-benchmark artifact to maven central.
+
+v2.6.14
+------
+
+* Fixing line number for method invocations in parseq-lambda-names contrib project.
+
+v2.6.13
+------
+
+* Upgraded dependency on pegasus to 11.0.0 in parseq-restli-client contrib project
+* Create 404 synthetic result when batch get request does not return any response for an id
+
+v2.6.12
+------
+
+* Adding contrib project parseq-lambda-names
+  - The project aims to provide more meaningful default descriptions for Parseq tasks. Using ASM, it tries to locate where lambda expression is defined in source code and also infer some details about its execution like function call within lambda expression with number of arguments.
+  - Using task descriptor in Task interface to infer task description
+
+v2.6.11
+------
+
+* Significantly reduce Task creation overhead when cross-thread stack tracing is enabled.
+
+v2.6.10
+------
+
+* Performance optimizations:
+  - Eagerly drain task queue in SerialExecutor. The goal of this optimization is to avoid expensive context switches and improve memory cache utilization for the price of "fairness". Since this version the default behavior is to drain task queue eagerly. The previous behavior can be enabled by setting Engine configuration property: `Engine.DRAIN_SERIAL_EXECUTOR_QUEUE` to `true`.
+  - Disable trampoline. Trampoline is a mechanism that allows avoiding stack overflow. It is not without a cost and for certain workflows it is worth turning it off. Since this version trampoline is disabled. It can be enabled using `ParSeqGlobalConfiguration.setTrampolineEnabled()`.
+  - Use LIFOBiPriorityQueue as a task queue implementation in SerialExecutor. LIFOBiPriorityQueue is a task queue that recognizes only two priorities which allows faster implementation. It also uses LIFO order which can improve memory cache utilization. It is possible to use previous implementation by default by setting Engine configuration property: `Engine.DEFAULT_TASK_QUEUE` to `FIFOPriorityQueue.class.getName()`.
+  - Avoid creation and copying of arrays in TaskParImpl.
+  - Tracing improvements. Removed reference counting and replaced usage of HashMaps with ArrayLists.
+* Added benchmarks that can be used for testing ParSeq performance. This is just a beginning of work on more reliable and automated performance tests for ParSeq.
+
+v2.6.9
+------
+
+* Deprecate Tasks.par(...) for safer alternative Task.par(...) that does not throw IllegalArgumentException on empty collection.
+* Enable automatic cross-thread stack tracing. It is an optional feature, turned off by default. See `ParSeqGlobalConfiguration.setCrossThreadStackTracesEnabled()`.
+
+v2.6.8
+------
+
+* Fixed unbatching various types of BATCH_GET requests from BATCH_GET for complex keys.
+
+v2.6.7
+------
+
+* Fixing test in TestRequestContextProvider
+
+v2.6.6
+------
+
+* Adding a notion of taskType in ShallowTrace. The idea is to set a type (string) to tasks such as timerTask, withSideEffectTask, remoteTask etc. This tag would be displayed in trace visualization.
+* Added RequestContext provider to ParSeqRestClient
+
 v2.6.5
 ------
 

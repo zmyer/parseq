@@ -26,11 +26,17 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 import com.linkedin.parseq.internal.ArgumentUtil;
 import com.linkedin.parseq.internal.ContextImpl;
+import com.linkedin.parseq.internal.ExecutionMonitor;
+import com.linkedin.parseq.internal.LIFOBiPriorityQueue;
 import com.linkedin.parseq.internal.PlanCompletionListener;
 import com.linkedin.parseq.internal.PlanDeactivationListener;
+import com.linkedin.parseq.internal.PlatformClock;
+import com.linkedin.parseq.internal.SerialExecutor;
+import com.linkedin.parseq.internal.SerialExecutor.TaskQueue;
 import com.linkedin.parseq.internal.PlanContext;
 
 
@@ -44,15 +50,49 @@ import com.linkedin.parseq.internal.PlanContext;
 public class Engine {
   public static final String LOGGER_BASE = Engine.class.getName();
 
+  // TODO: this constant should be renamed.
+  // Need to fix in the next major version release.
   public static final String MAX_RELATIONSHIPS_PER_TRACE = "_MaxRelationshipsPerTrace_";
-  private static final int DEFUALT_MAX_RELATIONSHIPS_PER_TRACE = 4096;
+  private static final int DEFUALT_MAX_RELATIONSHIPS_PER_TRACE = 65536;
 
   public static final String MAX_CONCURRENT_PLANS = "_MaxConcurrentPlans_";
   private static final int DEFUALT_MAX_CONCURRENT_PLANS = Integer.MAX_VALUE;
 
+  public static final String DRAIN_SERIAL_EXECUTOR_QUEUE = "_DrainSerialExecutorQueue_";
+  private static final boolean DEFAULT_DRAIN_SERIAL_EXECUTOR_QUEUE = true;
+
+  public static final String DEFAULT_TASK_QUEUE = "_DefaultTaskQueue_";
+
   private static final State INIT = new State(StateName.RUN, 0);
   private static final State TERMINATED = new State(StateName.TERMINATED, 0);
   private static final Logger LOG = LoggerFactory.getLogger(LOGGER_BASE);
+
+  public static final String MAX_EXECUTION_MONITORS = "_MaxExecutionMonitors_";
+  private static final int DEFAULT_MAX_EXECUTION_MONITORS = 1024;
+
+  public static final String MONITOR_EXECUTION = "_MonitorExecution_";
+  private static final boolean DEFAULT_MONITOR_EXECUTION = false;
+
+  public static final String EXECUTION_MONITOR_DURATION_THRESHOLD_NANO = "_ExecutionMonitorDurationThresholdNano_";
+  private static final long DEFAULT_EXECUTION_MONITOR_DURATION_THRESHOLD_NANO = TimeUnit.SECONDS.toNanos(1);
+
+  public static final String EXECUTION_MONITOR_CHECK_INTERVAL_NANO = "_ExecutionMonitorCheckIntervaldNano_";
+  private static final long DEFAULT_EXECUTION_MONITOR_CHECK_INTERVAL_NANO = TimeUnit.MILLISECONDS.toNanos(10);
+
+  public static final String EXECUTION_MONITOR_IDLE_DURATION_NANO = "_ExecutionMonitorIdleDurationNano_";
+  private static final long DEFAULT_EXECUTION_MONITOR_IDLE_DURATION_NANO = TimeUnit.MINUTES.toNanos(1);
+
+  public static final String EXECUTION_MONITOR_LOGGING_INTERVAL_NANO = "_ExecutionMonitorLoggingIntervalNano_";
+  private static final long DEFAULT_EXECUTION_MONITOR_LOGGING_INTERVAL_NANO = TimeUnit.MINUTES.toNanos(1);
+
+  public static final String EXECUTION_MONITOR_MIN_STALL_NANO = "_ExecutionMonitorMinStallNano_";
+  private static final long DEFAULT_EXECUTION_MONITOR_MIN_STALL_NANO = TimeUnit.MILLISECONDS.toNanos(10);
+
+  public static final String EXECUTION_MONITOR_STALLS_HISTORY_SIZE = "_ExecutionMonitorStallsHistorySize_";
+  private static final int DEFAULT_EXECUTION_MONITOR_STALLS_HISTORY_SIZE = 1024;
+
+  public static final String EXECUTION_MONITOR_LOG_LEVEL = "_ExecutionMonitorLogLevel_";
+  private static final Level DEFAULT_EXECUTION_MONITOR_LOG_LEVEL = Level.WARN;
 
   private static enum StateName {
     RUN,
@@ -75,12 +115,16 @@ public class Engine {
   private final int _maxConcurrentPlans;
   private final Semaphore _concurrentPlans;
 
+  private final boolean _drainSerialExecutorQueue;
+
+  private final ExecutionMonitor _executionMonitor;
+
   private final PlanDeactivationListener _planDeactivationListener;
   private final PlanCompletionListener _planCompletionListener;
 
   private final PlanCompletionListener _taskDoneListener;
 
-  // Cache these, since we'll use them frequently and they can be precomputed.
+  // Cache these, since we'll use them frequently and they can be pre-computed.
   private final Logger _allLogger;
   private final Logger _rootLogger;
 
@@ -94,7 +138,8 @@ public class Engine {
     _loggerFactory = loggerFactory;
     _properties = properties;
     _planDeactivationListener = planActivityListener;
-    _taskQueueFactory = taskQueueFactory;
+
+    _taskQueueFactory = createTaskQueueFactory(properties, taskQueueFactory);
 
     _allLogger = loggerFactory.getLogger(LOGGER_BASE + ":all");
     _rootLogger = loggerFactory.getLogger(LOGGER_BASE + ":root");
@@ -111,6 +156,12 @@ public class Engine {
       _maxConcurrentPlans = DEFUALT_MAX_CONCURRENT_PLANS;
     }
     _concurrentPlans = new Semaphore(_maxConcurrentPlans);
+
+    if (_properties.containsKey(DRAIN_SERIAL_EXECUTOR_QUEUE)) {
+      _drainSerialExecutorQueue = (Boolean) getProperty(DRAIN_SERIAL_EXECUTOR_QUEUE);
+    } else {
+      _drainSerialExecutorQueue = DEFAULT_DRAIN_SERIAL_EXECUTOR_QUEUE;
+    }
 
     _taskDoneListener = resolvedPromise -> {
       assert _stateRef.get()._pendingCount > 0;
@@ -140,6 +191,79 @@ public class Engine {
       }
     };
 
+    int maxMonitors = DEFAULT_MAX_EXECUTION_MONITORS;
+    if (_properties.containsKey(MAX_EXECUTION_MONITORS)) {
+      maxMonitors = (Integer) getProperty(MAX_EXECUTION_MONITORS);
+    }
+
+    long durationThresholdNano = DEFAULT_EXECUTION_MONITOR_DURATION_THRESHOLD_NANO;
+    if (_properties.containsKey(EXECUTION_MONITOR_DURATION_THRESHOLD_NANO)) {
+      durationThresholdNano = (Long) getProperty(EXECUTION_MONITOR_DURATION_THRESHOLD_NANO);
+    }
+
+    long checkIntervalNano = DEFAULT_EXECUTION_MONITOR_CHECK_INTERVAL_NANO;
+    if (_properties.containsKey(EXECUTION_MONITOR_CHECK_INTERVAL_NANO)) {
+      checkIntervalNano = (Long) getProperty(EXECUTION_MONITOR_CHECK_INTERVAL_NANO);
+    }
+
+    long idleDurationNano = DEFAULT_EXECUTION_MONITOR_IDLE_DURATION_NANO;
+    if (_properties.containsKey(EXECUTION_MONITOR_IDLE_DURATION_NANO)) {
+      idleDurationNano = (Long) getProperty(EXECUTION_MONITOR_IDLE_DURATION_NANO);
+    }
+
+    long loggingIntervalNano = DEFAULT_EXECUTION_MONITOR_LOGGING_INTERVAL_NANO;
+    if (_properties.containsKey(EXECUTION_MONITOR_LOGGING_INTERVAL_NANO)) {
+      loggingIntervalNano = (Long) getProperty(EXECUTION_MONITOR_LOGGING_INTERVAL_NANO);
+    }
+
+    long minStallNano = DEFAULT_EXECUTION_MONITOR_MIN_STALL_NANO;
+    if (_properties.containsKey(EXECUTION_MONITOR_MIN_STALL_NANO)) {
+      minStallNano = (Long) getProperty(EXECUTION_MONITOR_MIN_STALL_NANO);
+    }
+
+    int stallsHistorySize = DEFAULT_EXECUTION_MONITOR_STALLS_HISTORY_SIZE;
+    if (_properties.containsKey(EXECUTION_MONITOR_STALLS_HISTORY_SIZE)) {
+      stallsHistorySize = (Integer) getProperty(EXECUTION_MONITOR_STALLS_HISTORY_SIZE);
+    }
+
+    Level level = DEFAULT_EXECUTION_MONITOR_LOG_LEVEL;
+    if (_properties.containsKey(EXECUTION_MONITOR_LOG_LEVEL)) {
+      level = (Level) getProperty(EXECUTION_MONITOR_LOG_LEVEL);
+    }
+
+    boolean monitorExecution = DEFAULT_MONITOR_EXECUTION;
+    if (_properties.containsKey(MONITOR_EXECUTION)) {
+      monitorExecution = (Boolean) getProperty(MONITOR_EXECUTION);
+    }
+
+    _executionMonitor = monitorExecution
+        ? new ExecutionMonitor(maxMonitors, durationThresholdNano, checkIntervalNano, idleDurationNano,
+            loggingIntervalNano, minStallNano, stallsHistorySize, level, new PlatformClock()) : null;
+  }
+
+  @SuppressWarnings({ "rawtypes", "unchecked" })
+  private TaskQueueFactory createTaskQueueFactory(final Map<String, Object> properties, final TaskQueueFactory taskQueueFactory) {
+    if (taskQueueFactory == null) {
+      if (_properties.containsKey(DEFAULT_TASK_QUEUE)) {
+        String className = (String) properties.get(DEFAULT_TASK_QUEUE);
+        try {
+          final Class<? extends SerialExecutor.TaskQueue> clazz =
+              (Class<? extends TaskQueue>) Thread.currentThread().getContextClassLoader().loadClass(className);
+          return () -> {
+            try {
+              return clazz.newInstance();
+            } catch (InstantiationException | IllegalAccessException e) {
+              return new LIFOBiPriorityQueue();
+            }
+          };
+        } catch (ClassNotFoundException e) {
+          LOG.error("Failed to load TasQueue implementation: " + className + ", will use default implementation", e);
+        }
+      }
+      return LIFOBiPriorityQueue::new;
+    } else {
+      return taskQueueFactory;
+    }
   }
 
   public Object getProperty(String key) {
@@ -330,7 +454,7 @@ public class Engine {
 
     PlanContext planContext = new PlanContext(this, _taskExecutor, _timerExecutor, _loggerFactory, _allLogger,
         _rootLogger, planClass, task, _maxRelationshipsPerTrace, _planDeactivationListener, _planCompletionListener,
-        _taskQueueFactory.newTaskQueue());
+        _taskQueueFactory.newTaskQueue(), _drainSerialExecutorQueue, _executionMonitor);
     new ContextImpl(planContext, task).runTask();
   }
 

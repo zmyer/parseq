@@ -19,6 +19,8 @@ package com.linkedin.parseq.internal;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.linkedin.parseq.internal.ExecutionMonitor.ExecutionMonitorState;
+
 
 /**
  * An executor that provides the following guarantees:
@@ -68,15 +70,18 @@ public class SerialExecutor {
 
   private final Executor _executor;
   private final UncaughtExceptionHandler _uncaughtExecutionHandler;
-  private final ExecutorLoop _executorLoop = new ExecutorLoop();
+  private final Runnable _executorLoop;
   private final TaskQueue<PrioritizableRunnable> _queue;
   private final AtomicInteger _pendingCount = new AtomicInteger();
   private final DeactivationListener _deactivationListener;
+  private final ExecutionMonitor _executionMonitor;
 
   public SerialExecutor(final Executor executor,
       final UncaughtExceptionHandler uncaughtExecutionHandler,
       final DeactivationListener deactivationListener,
-      final TaskQueue<PrioritizableRunnable> taskQueue) {
+      final TaskQueue<PrioritizableRunnable> taskQueue,
+      final boolean drainSerialExecutorQueue,
+      final ExecutionMonitor executionMonitor) {
     ArgumentUtil.requireNotNull(executor, "executor");
     ArgumentUtil.requireNotNull(uncaughtExecutionHandler, "uncaughtExecutionHandler" );
     ArgumentUtil.requireNotNull(deactivationListener, "deactivationListener" );
@@ -85,6 +90,8 @@ public class SerialExecutor {
     _uncaughtExecutionHandler = uncaughtExecutionHandler;
     _queue = taskQueue;
     _deactivationListener = deactivationListener;
+    _executorLoop = drainSerialExecutorQueue ? new DrainingExecutorLoop() : new NonDrainingExecutorLoop();
+    _executionMonitor = executionMonitor;
   }
 
   public void execute(final PrioritizableRunnable runnable) {
@@ -109,13 +116,58 @@ public class SerialExecutor {
     }
   }
 
-  private class ExecutorLoop implements Runnable {
+  private class DrainingExecutorLoop implements Runnable {
     @Override
     public void run() {
       // Entering state:
       // - _queue.size() > 0
       // - _pendingCount.get() > 0
 
+      final ExecutionMonitorState executionState = _executionMonitor != null ? _executionMonitor.getLocalMonitorState() : null;
+      for (;;) {
+        if (executionState != null) {
+          executionState.activate();
+        }
+        final Runnable runnable = _queue.poll();
+        try {
+          runnable.run();
+
+          // Deactivation listener is called before _pendingCount.decrementAndGet() so that
+          // it does not run concurrently with any other Runnable submitted to this Executor.
+          // _pendingCount.get() == 1 means that there are no more Runnables submitted to this
+          // executor waiting to be executed. Since _pendingCount can be changed in other threads
+          // in is possible to get _pendingCount.get() == 1 and _pendingCount.decrementAndGet() > 0
+          // to be true few lines below.
+          if (_pendingCount.get() == 1) {
+            _deactivationListener.deactivated();
+          }
+        } catch (Throwable t) {
+          _uncaughtExecutionHandler.uncaughtException(t);
+        } finally {
+          // Guarantees that execution loop is scheduled only once to the underlying executor.
+          // Also makes sure that all memory effects of last Runnable are visible to the next Runnable
+          // in case value returned by decrementAndGet == 0.
+          if (_pendingCount.decrementAndGet() == 0) {
+            break;
+          }
+        }
+      }
+      if (executionState != null) {
+        executionState.deactivate();
+      }
+    }
+  }
+
+  private class NonDrainingExecutorLoop implements Runnable {
+    @Override
+    public void run() {
+      // Entering state:
+      // - _queue.size() > 0
+      // - _pendingCount.get() > 0
+      final ExecutionMonitorState executionState = _executionMonitor != null ? _executionMonitor.getLocalMonitorState() : null;
+      if (executionState != null) {
+        executionState.activate();
+      }
       final Runnable runnable = _queue.poll();
       try {
         runnable.run();
@@ -140,6 +192,9 @@ public class SerialExecutor {
           // to the next Runnable
           tryExecuteLoop();
         }
+      }
+      if (executionState != null) {
+        executionState.deactivate();
       }
     }
   }

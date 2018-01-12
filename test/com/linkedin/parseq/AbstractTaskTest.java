@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.testng.annotations.Test;
 
 import com.linkedin.parseq.function.Failure;
+import com.linkedin.parseq.function.Function1;
 import com.linkedin.parseq.function.Success;
 import com.linkedin.parseq.function.Try;
 
@@ -30,6 +31,31 @@ public abstract class AbstractTaskTest extends BaseEngineTest {
     assertEquals((int) task.get(), TASK_VALUE.length());
 
     assertEquals(countTasks(task.getTrace()), expectedNumberOfTasks);
+  }
+
+  public void testFlatMapFuncReturnNulll() {
+    Task<String> task = getSuccessTask().flatMap(str -> null);
+    runAndWaitException("AbstractTaskTest.testFlatMapFuncReturnNulll", task, RuntimeException.class);
+    assertTrue(task.getError().getMessage().contains("returned null"));
+  }
+
+  public void testFlattenTaskReturnNulll() {
+    Function1<String, Task<String>> func = s -> null;
+    Task<String> task = Task.flatten(getSuccessTask().map(func));
+    runAndWaitException("AbstractTaskTest.testFlattenTaskReturnNulll", task, RuntimeException.class);
+    assertTrue(task.getError().getMessage().contains("returned null"));
+  }
+
+  public void testRecoverWithFuncReturnNulll() {
+    Task<String> task = getFailureTask().recoverWith(e -> null);
+    runAndWaitException("AbstractTaskTest.testRecoverWithFuncReturnNulll", task, RuntimeException.class);
+    assertTrue(task.getError().getMessage().contains("returned null"));
+  }
+
+  public void testWithSideEffectFuncReturnNulll() {
+    Task<String> task = getSuccessTask().withSideEffect(str -> null);
+    runAndWaitException("AbstractTaskTest.testWithSideEffectFuncReturnNulll", task, RuntimeException.class);
+    assertTrue(task.getError().getMessage().contains("returned null"));
   }
 
   public void testFlatMap(int expectedNumberOfTasks) {
@@ -191,13 +217,14 @@ public abstract class AbstractTaskTest extends BaseEngineTest {
       fail("should have failed!");
     } catch (Exception ex) {
       assertEquals(ex.getCause().getClass(), Exceptions.TIMEOUT_EXCEPTION.getClass());
+      assertEquals(ex.getCause().getMessage(), "task: 'andThen: 0 delayed 110 ms' withTimeout 100ms");
     }
     assertEquals(countTasks(failure.getTrace()), 5);
   }
 
   @Test
   public void testWithTimeoutTwiceFailure() {
-    Task<Integer> failure = getSuccessTask().andThen(delayedValue(0, 110, TimeUnit.MILLISECONDS))
+    Task<Integer> failure = getSuccessTask().andThen(delayedValue(0, 2000, TimeUnit.MILLISECONDS))
         .withTimeout(5000, TimeUnit.MILLISECONDS).withTimeout(100, TimeUnit.MILLISECONDS);
     try {
       runAndWait("AbstractTaskTest.testWithTimeoutTwiceFailure", failure);

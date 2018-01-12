@@ -79,13 +79,13 @@ public class TestFIFOPriorityQueue {
   @Test
   public void testPollWithDefaultPriority() {
     final FIFOPriorityQueue<PrioritizableInt> queue = new FIFOPriorityQueue<>();
-    queue.add(new PrioritizableInt(-5, 1));
-    queue.add(new PrioritizableInt(10, 2));
-    queue.add(new PrioritizableInt(3));
+    queue.add(new PrioritizableInt(Priority.DEFAULT_PRIORITY, 1));
+    queue.add(new PrioritizableInt(Priority.DEFAULT_PRIORITY, 2));
+    queue.add(new PrioritizableInt(Priority.DEFAULT_PRIORITY, 3));
 
+    assertEquals(1, queue.poll().getValue());
     assertEquals(2, queue.poll().getValue());
     assertEquals(3, queue.poll().getValue());
-    assertEquals(1, queue.poll().getValue());
   }
 
   private static class Int {

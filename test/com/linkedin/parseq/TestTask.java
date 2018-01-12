@@ -1,10 +1,13 @@
 package com.linkedin.parseq;
 
+import com.linkedin.parseq.promise.Promises;
+import java.util.Arrays;
 import java.util.concurrent.TimeoutException;
-
+import org.testng.annotations.AfterClass;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
-import com.linkedin.parseq.promise.Promises;
+import static org.testng.Assert.*;
 
 
 /**
@@ -12,6 +15,19 @@ import com.linkedin.parseq.promise.Promises;
  * @author Jaroslaw Odzga (jodzga@linkedin.com)
  */
 public class TestTask extends AbstractTaskTest {
+
+  private boolean _crossThreadStackTracesEnabled;
+
+  @BeforeClass
+  public void start() {
+    _crossThreadStackTracesEnabled = ParSeqGlobalConfiguration.isCrossThreadStackTracesEnabled();
+    ParSeqGlobalConfiguration.setCrossThreadStackTracesEnabled(true);
+  }
+
+  @AfterClass
+  public void stop() {
+    ParSeqGlobalConfiguration.setCrossThreadStackTracesEnabled(_crossThreadStackTracesEnabled);
+  }
 
   @Test
   public void testMap() {
@@ -93,6 +109,40 @@ public class TestTask extends AbstractTaskTest {
     testOnFailureWhenCancelled(3);
   }
 
+  @Test
+  public void testStackFrames() {
+    Task<String> successTask = getSuccessTask();
+    try {
+      runAndWait("TestTask.testStackFrames", successTask.flatMap("nested", x -> getFailureTask()));
+      fail("should have failed");
+    } catch (Exception ex) {
+      String stackTrace = Arrays.toString(ex.getCause().getStackTrace());
+      assertFalse(stackTrace.contains("BaseTask"));
+      assertTrue(stackTrace.contains("\"failure\""));
+      assertTrue(stackTrace.contains("\"nested\""));
+    }
+  }
+
+  @Test
+  public void testFlatMapFuncReturnNulll() {
+    super.testFlatMapFuncReturnNulll();
+  }
+
+  @Test
+  public void testFlattenTaskReturnNulll() {
+    super.testFlattenTaskReturnNulll();
+  }
+
+  @Test
+  public void testRecoverWithFuncReturnNulll() {
+    super.testRecoverWithFuncReturnNulll();
+  }
+
+  @Test
+  public void testWithSideEffectFuncReturnNulll() {
+    super.testWithSideEffectFuncReturnNulll();
+  }
+
   @Override
   Task<String> getSuccessTask() {
     return Task.async("success", () -> Promises.value(TASK_VALUE));
@@ -109,5 +159,6 @@ public class TestTask extends AbstractTaskTest {
   Task<String> getCancelledTask() {
     return Task.async("cancelled", () -> {
       throw new CancellationException(new TimeoutException());
-    });  }
+    });
+  }
 }

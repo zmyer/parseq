@@ -16,7 +16,6 @@
 
 package com.linkedin.parseq;
 
-import com.linkedin.parseq.internal.Prioritizable;
 import java.util.Collection;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
@@ -64,6 +63,8 @@ import com.linkedin.parseq.trace.TraceBuilder;
  */
 public interface Task<T> extends Promise<T>, Cancellable {
   static final Logger LOGGER = LoggerFactory.getLogger(Task.class);
+
+  static final TaskDescriptor _taskDescriptor = TaskDescriptorFactory.getTaskDescriptor();
 
   //------------------- interface definition -------------------
 
@@ -192,7 +193,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #map(String, Function1)
    */
   default <R> Task<R> map(final Function1<? super T, ? extends R> func) {
-    return map("map: " + func.getClass().getName(), func);
+    return map("map: " + _taskDescriptor.getDescription(func.getClass().getName()), func);
   }
 
   /**
@@ -227,7 +228,15 @@ public interface Task<T> extends Promise<T>, Cancellable {
    */
   default <R> Task<R> flatMap(final String desc, final Function1<? super T, Task<R>> func) {
     ArgumentUtil.requireNotNull(func, "function");
-    final Task<Task<R>> nested = map("map: " + desc, func);
+    final Function1<? super T, Task<R>> flatMapFunc = x -> {
+      Task<R> t = func.apply(x);
+      if (t == null) {
+        throw new RuntimeException(desc + " returned null");
+      } else {
+        return t;
+      }
+    };
+    final Task<Task<R>> nested = map(desc, flatMapFunc);
     nested.getShallowTraceBuilder().setSystemHidden(true);
     return flatten(desc, nested);
   }
@@ -237,7 +246,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #flatMap(String, Function1)
    */
   default <R> Task<R> flatMap(final Function1<? super T, Task<R>> func) {
-    return flatMap("flatMap: " + func.getClass().getName(), func);
+    return flatMap("flatMap: " + _taskDescriptor.getDescription(func.getClass().getName()), func);
   }
 
   /**
@@ -267,18 +276,22 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @param desc description of a side effect, it will show up in a trace
    * @param func function to be applied on result of successful completion of this task
    * to get side effect task
-   * @return a new task that will run side effect task specified by given function upon succesful
+   * @return a new task that will run side effect task specified by given function upon successful
    * completion of this task
    */
   default Task<T> withSideEffect(final String desc, final Function1<? super T, Task<?>> func) {
     ArgumentUtil.requireNotNull(func, "function");
     final Task<T> that = this;
-    return async("withSideEffect", context -> {
+    Task<T> withSideEffectTask = async("withSideEffect", context -> {
       final Task<T> sideEffectWrapper = async(desc, ctx -> {
         SettablePromise<T> promise = Promises.settable();
         if (!that.isFailed()) {
           Task<?> sideEffect = func.apply(that.get());
-          ctx.runSideEffect(sideEffect);
+          if (sideEffect == null) {
+            throw new RuntimeException(desc + " returned null");
+          } else {
+            ctx.runSideEffect(sideEffect);
+          }
         }
         Promises.propagateResult(that, promise);
         return promise;
@@ -288,6 +301,9 @@ public interface Task<T> extends Promise<T>, Cancellable {
       context.run(that);
       return sideEffectWrapper;
     });
+
+    withSideEffectTask.getShallowTraceBuilder().setTaskType(TaskType.WITH_SIDE_EFFECT.getName());
+    return withSideEffectTask;
   }
 
   /**
@@ -295,7 +311,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #withSideEffect(String, Function1)
    */
   default Task<T> withSideEffect(final Function1<? super T, Task<?>> func) {
-    return withSideEffect("sideEffect: " + func.getClass().getName(), func);
+    return withSideEffect("sideEffect: " + _taskDescriptor.getDescription(func.getClass().getName()), func);
   }
 
   /**
@@ -342,12 +358,14 @@ public interface Task<T> extends Promise<T>, Cancellable {
    */
   default Task<T> shareable() {
     final Task<T> that = this;
-    return async("shareable", context -> {
+    Task<T> shareableTask = async("shareable", context -> {
       final SettablePromise<T> result = Promises.settable();
       context.runSideEffect(that);
       Promises.propagateResult(that, result);
       return result;
     });
+    shareableTask.getShallowTraceBuilder().setTaskType(TaskType.SHAREABLE.getName());
+    return shareableTask;
   }
 
   /**
@@ -392,7 +410,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #andThen(String, Consumer1)
    */
   default Task<T> andThen(final Consumer1<? super T> consumer) {
-    return andThen("andThen: " + consumer.getClass().getName(), consumer);
+    return andThen("andThen: " + _taskDescriptor.getDescription(consumer.getClass().getName()), consumer);
   }
 
   /**
@@ -412,6 +430,20 @@ public interface Task<T> extends Promise<T>, Cancellable {
    *      processPayment.andThen("shipProductAterPayment", shipProduct);
    * </pre></blockquote>
    * <img src="https://raw.githubusercontent.com/linkedin/parseq/master/src/com/linkedin/parseq/doc-files/andThen-3.png" height="90" width="462"/>
+   *
+   * <p>
+   *
+   * Task passed in as a parameter is typically not started before this task starts.
+   * However, if task passed in as a parameter is completed before this task was started
+   * then this task will get cancelled and will not be executed at all. For example, if in above
+   * code snippet the {@code shipProduct} task is completed before the {@code processPayment}
+   * task is started then the {@code processPayment} task will be cancelled. This is the consequence
+   * of a general mechanism of task cancellation: parent task's completion automatically cancels
+   * all children tasks:
+   *
+   * <p>
+   *
+   * <img src="https://raw.githubusercontent.com/linkedin/parseq/master/src/com/linkedin/parseq/doc-files/andThen-4.png" height="152" width="462"/>
    *
    * @param <R> return type of the <code>task</code>
    * @param desc description of a task, it will show up in a trace
@@ -435,7 +467,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #andThen(String, Task)
    */
   default <R> Task<R> andThen(final Task<R> task) {
-    return andThen("andThen: " + task.getClass().getName(), task);
+    return andThen("andThen: " + task.getName(), task);
   }
 
   /**
@@ -490,7 +522,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #recover(String, Function1)
    */
   default Task<T> recover(final Function1<Throwable, T> func) {
-    return recover("recover: " + func.getClass().getName(), func);
+    return recover("recover: " + _taskDescriptor.getDescription(func.getClass().getName()), func);
   }
 
   /**
@@ -555,7 +587,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #onFailure(String, Consumer1)
    */
   default Task<T> onFailure(final Consumer1<Throwable> consumer) {
-    return onFailure("onFailure: " + consumer.getClass().getName(), consumer);
+    return onFailure("onFailure: " + _taskDescriptor.getDescription(consumer.getClass().getName()), consumer);
   }
 
   /**
@@ -673,7 +705,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #transform(String, Function1)
    */
   default <R> Task<R> transform(final Function1<Try<T>, Try<R>> func) {
-    return transform("transform: " + func.getClass().getName(), func);
+    return transform("transform: " + _taskDescriptor.getDescription(func.getClass().getName()), func);
   }
 
   /**
@@ -712,7 +744,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
   default Task<T> recoverWith(final String desc, final Function1<Throwable, Task<T>> func) {
     ArgumentUtil.requireNotNull(func, "function");
     final Task<T> that = this;
-    return async(desc, context -> {
+    Task<T> recoverWithTask = async(desc, context -> {
       final SettablePromise<T> result = Promises.settable();
       final Task<T> recovery = async("recovery", ctx -> {
         final SettablePromise<T> recoveryResult = Promises.settable();
@@ -720,6 +752,9 @@ public interface Task<T> extends Promise<T>, Cancellable {
           if (!(Exceptions.isCancellation(that.getError()))) {
             try {
               Task<T> r = func.apply(that.getError());
+              if (r == null) {
+                throw new RuntimeException(desc + " returned null");
+              }
               Promises.propagateResult(r, recoveryResult);
               ctx.run(r);
             } catch (Throwable t) {
@@ -734,11 +769,14 @@ public interface Task<T> extends Promise<T>, Cancellable {
         return recoveryResult;
       });
       recovery.getShallowTraceBuilder().setSystemHidden(true);
+      recovery.getShallowTraceBuilder().setTaskType(TaskType.RECOVER.getName());
       Promises.propagateResult(recovery, result);
       context.after(that).run(recovery);
       context.run(that);
       return result;
     });
+    recoverWithTask.getShallowTraceBuilder().setTaskType(TaskType.WITH_RECOVER.getName());
+    return recoverWithTask;
   }
 
   /**
@@ -746,7 +784,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #recoverWith(String, Function1)
    */
   default Task<T> recoverWith(final Function1<Throwable, Task<T>> func) {
-    return recoverWith("recoverWith: " + func.getClass().getName(), func);
+    return recoverWith("recoverWith: " + _taskDescriptor.getDescription(func.getClass().getName()), func);
   }
 
   /**
@@ -781,16 +819,18 @@ public interface Task<T> extends Promise<T>, Cancellable {
     final Task<T> that = this;
     final String taskName = "withTimeout " + time + TimeUnitHelper.toString(unit) +
         (desc != null ? " " + desc : "");
+    final String timeoutExceptionMessage = "task: '" + getName() + "' " + taskName;
     Task<T> withTimeout = async(taskName, ctx -> {
       final AtomicBoolean committed = new AtomicBoolean();
       final SettablePromise<T> result = Promises.settable();
       final Task<?> timeoutTask = Task.action("timeout", () -> {
         if (committed.compareAndSet(false, true)) {
-          result.fail(Exceptions.timeoutException(taskName));
+          result.fail(Exceptions.timeoutException(timeoutExceptionMessage));
         }
       } );
       //timeout tasks should run as early as possible
       timeoutTask.setPriority(Priority.MAX_PRIORITY);
+      timeoutTask.getShallowTraceBuilder().setTaskType(TaskType.TIMEOUT.getName());
       ctx.createTimer(time, unit, timeoutTask);
       that.addListener(p -> {
         if (committed.compareAndSet(false, true)) {
@@ -804,6 +844,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
       return result;
     });
     withTimeout.setPriority(getPriority());
+    withTimeout.getShallowTraceBuilder().setTaskType(TaskType.WITH_TIMEOUT.getName());
     return withTimeout;
   }
 
@@ -816,14 +857,18 @@ public interface Task<T> extends Promise<T>, Cancellable {
    */
   public static <R> Task<R> flatten(final String desc, final Task<Task<R>> task) {
     ArgumentUtil.requireNotNull(task, "task");
-    return async(desc, context -> {
+    Task<R> flattenTask = async(desc, context -> {
       final SettablePromise<R> result = Promises.settable();
       context.after(task).run(() -> {
         try {
           if (!task.isFailed()) {
             Task<R> t = task.get();
-            Promises.propagateResult(t, result);
-            return t;
+            if (t == null) {
+              throw new RuntimeException(desc + " returned null");
+            } else {
+              Promises.propagateResult(t, result);
+              return t;
+            }
           } else {
             result.fail(task.getError());
           }
@@ -835,6 +880,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
       context.run(task);
       return result;
     });
+    flattenTask.getShallowTraceBuilder().setTaskType(TaskType.FLATTEN.getName());
+    return flattenTask;
   }
 
   /**
@@ -883,7 +930,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #action(String, Action)
    */
   public static Task<Void> action(final Action action) {
-    return action("action: " + action.getClass().getName(), action);
+    return action("action: " + _taskDescriptor.getDescription(action.getClass().getName()), action);
   }
 
   /**
@@ -975,7 +1022,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #callable(String, Callable)
    */
   public static <T> Task<T> callable(final Callable<? extends T> callable) {
-    return callable("callable: " + callable.getClass().getName(), callable);
+    return callable("callable: " + _taskDescriptor.getDescription(callable.getClass().getName()), callable);
   }
 
   /**
@@ -1057,7 +1104,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #async(String, Callable)
    */
   public static <T> Task<T> async(final Callable<Promise<? extends T>> callable) {
-    return async("async: " + callable.getClass().getName(), callable);
+    return async("async: " + _taskDescriptor.getDescription(callable.getClass().getName()), callable);
   }
 
   /**
@@ -1094,7 +1141,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #async(String, Function1)
    */
   public static <T> Task<T> async(final Function1<Context, Promise<? extends T>> func) {
-    return async("async: " + func.getClass().getName(), func);
+    return async("async: " + _taskDescriptor.getDescription(func.getClass().getName()), func);
   }
 
   /**
@@ -1123,7 +1170,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
   public static <T> Task<T> blocking(final String name, final Callable<? extends T> callable, final Executor executor) {
     ArgumentUtil.requireNotNull(callable, "callable");
     ArgumentUtil.requireNotNull(callable, "executor");
-    return async(name, () -> {
+    Task<T> blockingTask = async(name, () -> {
       final SettablePromise<T> promise = Promises.settable();
       executor.execute(() -> {
         try {
@@ -1134,6 +1181,8 @@ public interface Task<T> extends Promise<T>, Cancellable {
       } );
       return promise;
     });
+    blockingTask.getShallowTraceBuilder().setTaskType(TaskType.BLOCKING.getName());
+    return blockingTask;
   }
 
   /**
@@ -1141,7 +1190,7 @@ public interface Task<T> extends Promise<T>, Cancellable {
    * @see #blocking(String, Callable, Executor)
    */
   public static <T> Task<T> blocking(final Callable<? extends T> callable, final Executor executor) {
-    return blocking("blocking: " + callable.getClass().getName(), callable, executor);
+    return blocking("blocking: " + _taskDescriptor.getDescription(callable.getClass().getName()), callable, executor);
   }
 
   /**
@@ -1389,6 +1438,33 @@ public interface Task<T> extends Promise<T>, Cancellable {
     ArgumentUtil.requireNotNull(task9, "task9");
     return new Par9Task<T1, T2, T3, T4, T5, T6, T7, T8, T9>("par9", task1, task2, task3, task4, task5, task6, task7,
         task8, task9);
+  }
+
+  /**
+   * Creates a new task that will run each of the supplied tasks in parallel (e.g.
+   * tasks[0] can be run at the same time as tasks[1]).
+   * <p>
+   * When all tasks complete successfully, you can use
+   * {@link com.linkedin.parseq.ParTask#get()} to get a list of the results. If
+   * at least one task failed, then this task will also be marked as failed. Use
+   * {@link com.linkedin.parseq.ParTask#getTasks()} or
+   * {@link com.linkedin.parseq.ParTask#getSuccessful()} to get results in this
+   * case.
+   * <p>
+   * If the Iterable of tasks is empty, {@link com.linkedin.parseq.ParTask#get()}
+   * will return an empty list.
+   * <p>
+   * Note that resulting task does not fast-fail e.g. if one of the tasks fail others
+   * are not cancelled. This is different behavior than {@link Task#par(Task, Task)} where
+   * resulting task fast-fails.
+   *
+   * @param tasks the tasks to run in parallel
+   * @return The results of the tasks
+   */
+  public static <T> ParTask<T> par(final Iterable<? extends Task<? extends T>> tasks) {
+    return tasks.iterator().hasNext()
+        ? new ParTaskImpl<T>("par", tasks)
+        : new ParTaskImpl<T>("par");
   }
 
   /**

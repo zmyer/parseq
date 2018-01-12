@@ -50,7 +50,7 @@ class FusionTask<S, T> extends BaseTask<T> {
   private final ShallowTraceBuilder _predecessorShallowTraceBuilder;
 
   private FusionTask(final String desc, final Task<S> task, final PromisePropagator<S, T> propagator) {
-    super(desc);
+    super(desc, TaskType.FUSION.getName());
     _propagator = completing(adaptToAcceptTraceContext(propagator));
     _asyncTask = task;
     _predecessorShallowTraceBuilder = null;
@@ -58,7 +58,7 @@ class FusionTask<S, T> extends BaseTask<T> {
 
   private <R> FusionTask(final String desc, final FusionTask<S, R> predecessor,
       final PromisePropagator<R, T> propagator) {
-    super(desc);
+    super(desc, TaskType.FUSION.getName());
     _asyncTask = predecessor._asyncTask;
     _predecessorShallowTraceBuilder = predecessor.getShallowTraceBuilder();
     _propagator = completing(compose(predecessor._propagator, adaptToAcceptTraceContext(propagator)));
@@ -73,7 +73,7 @@ class FusionTask<S, T> extends BaseTask<T> {
     return (traceContext, src, dest) -> propagator.accept(src, dest);
   }
 
-  private void trnasitionToDone(final FusionTraceContext traceContext) {
+  private void transitionDone(final FusionTraceContext traceContext) {
     addRelationships(traceContext);
     transitionPending();
     transitionDone();
@@ -216,43 +216,45 @@ class FusionTask<S, T> extends BaseTask<T> {
         markTaskStarted();
         //non-parent task executed for the first time
         traceContext.getParent().getTaskLogger().logTaskStart(this);
+
+        Settable<T> next = new Settable<T>() {
+          @Override
+          public void done(final T value) throws PromiseResolvedException {
+            try {
+              transitionDone(traceContext);
+              final Function<T, String> traceValueProvider = _traceValueProvider;
+              _shallowTraceBuilder.setResultType(ResultType.SUCCESS);
+              if (traceValueProvider != null) {
+                try {
+                  _shallowTraceBuilder.setValue(traceValueProvider.apply(value));
+                } catch (Exception e) {
+                  _shallowTraceBuilder.setValue(Exceptions.failureToString(e));
+                }
+              }
+              settable.done(value);
+              traceContext.getParent().getTaskLogger().logTaskEnd(FusionTask.this, _traceValueProvider);
+              CONTINUATIONS.submit(() -> dest.done(value));
+            } catch (Exception e) {
+              CONTINUATIONS.submit(() -> dest.fail(e));
+            }
+          }
+
+          @Override
+          public void fail(final Throwable error) throws PromiseResolvedException {
+            try {
+              transitionDone(traceContext);
+              traceFailure(error);
+              settable.fail(error);
+              traceContext.getParent().getTaskLogger().logTaskEnd(FusionTask.this, _traceValueProvider);
+              CONTINUATIONS.submit(() -> dest.fail(error));
+            } catch (Exception e) {
+              CONTINUATIONS.submit(() -> dest.fail(e));
+            }
+          }
+        };
         CONTINUATIONS.submit(() -> {
           try {
-            propagator.accept(traceContext, src, new Settable<T>() {
-              @Override
-              public void done(final T value) throws PromiseResolvedException {
-                try {
-                  trnasitionToDone(traceContext);
-                  final Function<T, String> traceValueProvider = _traceValueProvider;
-                  _shallowTraceBuilder.setResultType(ResultType.SUCCESS);
-                  if (traceValueProvider != null) {
-                    try {
-                      _shallowTraceBuilder.setValue(traceValueProvider.apply(value));
-                    } catch (Exception e) {
-                      _shallowTraceBuilder.setValue(Exceptions.failureToString(e));
-                    }
-                  }
-                  settable.done(value);
-                  traceContext.getParent().getTaskLogger().logTaskEnd(FusionTask.this, _traceValueProvider);
-                  CONTINUATIONS.submit(() -> dest.done(value));
-                } catch (Exception e) {
-                  CONTINUATIONS.submit(() -> dest.fail(e));
-                }
-              }
-
-              @Override
-              public void fail(final Throwable error) throws PromiseResolvedException {
-                try {
-                  trnasitionToDone(traceContext);
-                  traceFailure(error);
-                  settable.fail(error);
-                  traceContext.getParent().getTaskLogger().logTaskEnd(FusionTask.this, _traceValueProvider);
-                  CONTINUATIONS.submit(() -> dest.fail(error));
-                } catch (Exception e) {
-                  CONTINUATIONS.submit(() -> dest.fail(e));
-                }
-              }
-            });
+            propagator.accept(traceContext, src, next);
           } catch (Exception e) {
             /* This can only happen if there is an internal problem. Propagators should not throw any exceptions. */
             LOGGER.error("ParSeq ingternal error. An exception was thrown by propagator.", e);
@@ -296,8 +298,12 @@ class FusionTask<S, T> extends BaseTask<T> {
           if (!(Exceptions.isCancellation(that.getError()))) {
             try {
               Task<T> r = func.apply(that.getError());
-              Promises.propagateResult(r, result);
-              return r;
+              if (r == null) {
+                throw new RuntimeException(desc + " returned null");
+              } else {
+                Promises.propagateResult(r, result);
+                return r;
+              }
             } catch (Throwable t) {
               result.fail(t);
               return null;
@@ -342,8 +348,9 @@ class FusionTask<S, T> extends BaseTask<T> {
         propagate(traceContext, fusionResult);
         return fusionResult;
       });
-      propagationTask.getShallowTraceBuilder().setHidden(_shallowTraceBuilder.getHidden());
-      propagationTask.getShallowTraceBuilder().setSystemHidden(_shallowTraceBuilder.getSystemHidden());
+      propagationTask.getShallowTraceBuilder()
+        .setHidden(_shallowTraceBuilder.getHidden())
+        .setSystemHidden(_shallowTraceBuilder.getSystemHidden());
       _shallowTraceBuilder.setName("async fused");
       _shallowTraceBuilder.setSystemHidden(true);
       context.after(_asyncTask).run(propagationTask);
