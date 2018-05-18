@@ -16,7 +16,9 @@
 
 package com.linkedin.restli.client;
 
+import com.linkedin.data.schema.PathSpec;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -46,6 +48,8 @@ import com.linkedin.restli.common.BatchResponse;
 import com.linkedin.restli.common.EmptyRecord;
 import com.linkedin.restli.examples.RestLiIntTestServer;
 import com.linkedin.restli.examples.greetings.api.Greeting;
+import com.linkedin.restli.examples.greetings.api.Message;
+import com.linkedin.restli.examples.greetings.client.AssociationsSubBuilders;
 import com.linkedin.restli.examples.greetings.client.GreetingsBuilders;
 
 
@@ -91,7 +95,7 @@ public abstract class ParSeqRestClientIntegrationTest extends BaseEngineTest {
         RestLiIntTestServer.supportedCompression, true, 5000);
     _server.start();
     _clientFactory = new HttpClientFactory();
-    _transportClients = new ArrayList<Client>();
+    _transportClients = new ArrayList<>();
     _restClient = createRestClient();
   }
 
@@ -112,12 +116,12 @@ public abstract class ParSeqRestClientIntegrationTest extends BaseEngineTest {
       _serverScheduler.shutdownNow();
     }
     for (Client client : _transportClients) {
-      FutureCallback<None> callback = new FutureCallback<None>();
+      FutureCallback<None> callback = new FutureCallback<>();
       client.shutdown(callback);
       callback.get();
     }
     if (_clientFactory != null) {
-      FutureCallback<None> callback = new FutureCallback<None>();
+      FutureCallback<None> callback = new FutureCallback<>();
       _clientFactory.shutdown(callback);
       callback.get();
     }
@@ -155,6 +159,18 @@ public abstract class ParSeqRestClientIntegrationTest extends BaseEngineTest {
     return _parseqClient.createTask(new GreetingsBuilders().get().id(id).build());
   }
 
+  protected Task<Response<Greeting>> greetingGetWithProjection(Long id, PathSpec... fields) {
+    return _parseqClient.createTask(new GreetingsBuilders().get().id(id).fields(fields).build());
+  }
+
+  protected Task<Response<Message>> associationsGet(String src, String dst, String id) {
+    return _parseqClient.createTask(new AssociationsSubBuilders().get().srcKey(src).destKey(dst).id(id).build());
+  }
+
+  protected Task<Response<Message>> associationsGet(String src, String dst, String id, RequestConfigOverrides configOverrides) {
+    return _parseqClient.createTask(new AssociationsSubBuilders().get().srcKey(src).destKey(dst).id(id).build(), configOverrides);
+  }
+
   protected Task<Response<Greeting>> greetingGet(Long id, RequestConfigOverrides configOverrides) {
     return _parseqClient.createTask(new GreetingsBuilders().get().id(id).build(), configOverrides);
   }
@@ -169,6 +185,10 @@ public abstract class ParSeqRestClientIntegrationTest extends BaseEngineTest {
 
   protected Task<Response<BatchResponse<Greeting>>> greetings(Long... ids) {
     return _parseqClient.createTask(new GreetingsBuilders().batchGet().ids(ids).build());
+  }
+
+  protected Task<Response<BatchResponse<Greeting>>> greetingsWithProjection(Collection<PathSpec> fields, Long... ids) {
+    return _parseqClient.createTask(new GreetingsBuilders().batchGet().ids(ids).fields(fields.toArray(new PathSpec[fields.size()])).build());
   }
 
   protected Task<Response<BatchResponse<Greeting>>> greetings(RequestConfigOverrides configOverrides, Long... ids) {

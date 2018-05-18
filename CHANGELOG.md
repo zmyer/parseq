@@ -1,3 +1,48 @@
+v2.6.32
+------
+
+* Add javadoc to ParSeqRestClient to explain error handling.
+* Update README for parseq-restli-client maxBatchSize configuration limitation on existing BATCH_GET.
+* Fix tracevis name truncation bug
+* Attach version number to tracevis server jar
+
+v2.6.31
+------
+
+* PlanCompletionListener should be invoked after batch task is finished.
+
+v2.6.30
+------
+
+* Bridge between Task and CompletionStage.
+
+v2.6.29
+------
+
+* Increase the arity of Task.par() to support 15 parameters.
+* Standardize indentation by 2 spaces on all pom.xml files.
+
+v2.6.28
+------
+
+* Fix StackOverflowError in RequestConfigTree.
+
+v2.6.27
+------
+
+* Use typesafe method to build projection for single get.
+
+v2.6.26
+------
+
+* Use typesafe batch request builder method to build batch_get.
+* Support sub-resource level configuration in ParSeqRestClient.
+
+v2.6.25
+------
+
+* Adds back ParSeqRestClient(RestClient) constructor to maintain binary backward-compatibility.
+
 v2.6.24
 ------
 

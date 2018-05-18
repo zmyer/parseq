@@ -20,11 +20,14 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 
+import java.util.Arrays;
 import org.testng.annotations.Test;
 
 import com.linkedin.parseq.Task;
+import com.linkedin.parseq.Tuple2Task;
 import com.linkedin.restli.client.config.RequestConfigOverrides;
 import com.linkedin.restli.examples.greetings.api.Greeting;
+import com.linkedin.restli.examples.greetings.api.Message;
 import com.linkedin.restli.examples.greetings.client.GreetingsBuilders;
 
 
@@ -48,6 +51,21 @@ public abstract class ParSeqRestClientBatchingIntegrationTest extends ParSeqRest
   }
 
   @Test
+  public void testGetSubResourceRequests() {
+    Tuple2Task<Response<Message>,Response<Message>> task = Task.par(associationsGet("a", "b", "x"), associationsGet("a", "b", "y"));
+    if (expectBatching()) {
+      runAndWaitException(task, RestLiResponseException.class);
+      assertTrue(task.getError().getCause().getMessage().contains("associationsSub?ids=List(x,y)"));
+    } else {
+      runAndWait(getTestClassName() + ".testGetSubResourceRequests", task);
+      assertEquals(task.get()._1().getEntity().getMessage(), "b");
+      assertEquals(task.get()._1().getEntity().getId(), "a");
+      assertEquals(task.get()._2().getEntity().getMessage(), "b");
+      assertEquals(task.get()._2().getEntity().getId(), "a");
+    }
+  }
+
+  @Test
   public void testGetRequestsOverrides() {
     Task<?> task = Task.par(greetingGet(1L, overrides()), greetingGet(2L, overrides()));
     runAndWait(getTestClassName() + ".testGetRequestsOverrides", task);
@@ -55,6 +73,21 @@ public abstract class ParSeqRestClientBatchingIntegrationTest extends ParSeqRest
       assertTrue(hasTask("greetings batch_get(reqs: 2, ids: 2)", task.getTrace()));
     } else {
       assertFalse(hasTask("greetings batch_get(reqs: 2, ids: 2)", task.getTrace()));
+    }
+  }
+
+  @Test
+  public void testGetSubResourceRequestsOverrides() {
+    Tuple2Task<Response<Message>,Response<Message>> task = Task.par(associationsGet("a", "b", "x", overrides()), associationsGet("a", "b", "y", overrides()));
+    if (expectBatchingOverrides()) {
+      runAndWaitException(task, RestLiResponseException.class);
+      assertTrue(task.getError().getCause().getMessage().contains("associationsSub?ids=List(x,y)"));
+    } else {
+      runAndWait(getTestClassName() + ".testGetSubResourceRequestsOverrides", task);
+      assertEquals(task.get()._1().getEntity().getMessage(), "b");
+      assertEquals(task.get()._1().getEntity().getId(), "a");
+      assertEquals(task.get()._2().getEntity().getMessage(), "b");
+      assertEquals(task.get()._2().getEntity().getId(), "a");
     }
   }
 
@@ -290,6 +323,18 @@ public abstract class ParSeqRestClientBatchingIntegrationTest extends ParSeqRest
   }
 
   @Test
+  public void testBatchGetRequestsWithProjection() {
+    Task<?> task = Task.par(greetingsWithProjection(Arrays.asList(Greeting.fields().tone()), 1L, 2L),
+        greetingsWithProjection(Arrays.asList(Greeting.fields().message()),3L, 4L));
+    runAndWait(getTestClassName() + ".testBatchGetRequests", task);
+    if (expectBatching()) {
+      assertTrue(hasTask("greetings batch_get(reqs: 2, ids: 4)", task.getTrace()));
+    } else {
+      assertFalse(hasTask("greetings batch_get(reqs: 2, ids: 4)", task.getTrace()));
+    }
+  }
+
+  @Test
   public void testBatchGetRequestsOverrides() {
     Task<?> task = Task.par(greetings(overrides(), 1L, 2L), greetings(overrides(), 3L, 4L));
     runAndWait(getTestClassName() + ".testBatchGetRequestsOverrides", task);
@@ -303,6 +348,18 @@ public abstract class ParSeqRestClientBatchingIntegrationTest extends ParSeqRest
   @Test
   public void testGetAndBatchGetRequests() {
     Task<?> task = Task.par(greetingGet(1L), greetings(2L, 3L));
+    runAndWait(getTestClassName() + ".testGetAndBatchGetRequests", task);
+    if (expectBatching()) {
+      assertTrue(hasTask("greetings batch_get(reqs: 2, ids: 3)", task.getTrace()));
+    } else {
+      assertFalse(hasTask("greetings batch_get(reqs: 2, ids: 3)", task.getTrace()));
+    }
+  }
+
+  @Test
+  public void testGetAndBatchGetRequestsWithProjection() {
+    Task<?> task = Task.par(greetingGetWithProjection(1L, Greeting.fields().message()), greetingsWithProjection(
+        Arrays.asList(Greeting.fields().tone()),2L, 3L));
     runAndWait(getTestClassName() + ".testGetAndBatchGetRequests", task);
     if (expectBatching()) {
       assertTrue(hasTask("greetings batch_get(reqs: 2, ids: 3)", task.getTrace()));
@@ -337,6 +394,14 @@ public abstract class ParSeqRestClientBatchingIntegrationTest extends ParSeqRest
   }
 
   @Test
+  public void testSingleGetRequestIsNotBatchedWithProjection() {
+    Task<Boolean> task = greetingGetWithProjection(1L, Greeting.fields().tone()).map(Response::getEntity).map(Greeting::hasMessage);
+    runAndWait(getTestClassName() + ".testSingleGetRequestIsNotBatchedWithProjection", task);
+    assertFalse(hasTask("greetings batch_get(reqs: 1, ids: 1)", task.getTrace()));
+    assertFalse(task.get());
+  }
+
+  @Test
   public void testDuplicateGetRequestIsNotBatched() {
     Task<?> task = Task.par(greetingGet(1L), greetingGet(1L));
     runAndWait(getTestClassName() + ".testDuplicateGetRequestIsNotBatched", task);
@@ -348,6 +413,24 @@ public abstract class ParSeqRestClientBatchingIntegrationTest extends ParSeqRest
     Task<?> task = Task.par(greetingGet(1L, overrides()), greetingGet(1L, overrides()));
     runAndWait(getTestClassName() + ".testDuplicateGetRequestIsNotBatchedOverrides", task);
     assertFalse(hasTask("greetings batch_get(reqs: 1, ids: 1)", task.getTrace()));
+  }
+
+  @Test
+  public void testBatchGetWithProjection() {
+    try {
+      setInboundRequestContext(new InboundRequestContextBuilder()
+          .setName("withBatching")
+          .build());
+      Task<?> task = Task.par(
+          greetingGetWithProjection(1L, Greeting.fields().tone()).map(Response::getEntity).map(Greeting::hasMessage),
+          greetingGetWithProjection(2L, Greeting.fields().tone()).map(Response::getEntity).map(Greeting::hasMessage))
+          .map((a, b) -> a || b);
+      runAndWait(getTestClassName() + ".testBatchGetWithProjection", task);
+
+      assertFalse((Boolean)task.get());
+    } finally {
+      clearInboundRequestContext();
+    }
   }
 
   @Test
