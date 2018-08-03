@@ -16,10 +16,10 @@
 
 package com.linkedin.parseq.internal;
 
+import com.linkedin.parseq.internal.ExecutionMonitor.ExecutionMonitorState;
+
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import com.linkedin.parseq.internal.ExecutionMonitor.ExecutionMonitorState;
 
 
 /**
@@ -41,6 +41,7 @@ import com.linkedin.parseq.internal.ExecutionMonitor.ExecutionMonitorState;
  * @author Chris Pettitt (cpettitt@linkedin.com)
  * @author Jaroslaw Odzga (jodzga@linkedin.com)
  */
+// TODO: 2018/7/25 by zmyer
 public class SerialExecutor {
 
   /*
@@ -68,153 +69,160 @@ public class SerialExecutor {
    * executing SerialExecutor.execute. Combined with HB1 this means that P is true.
    */
 
-  private final Executor _executor;
-  private final UncaughtExceptionHandler _uncaughtExecutionHandler;
-  private final Runnable _executorLoop;
-  private final TaskQueue<PrioritizableRunnable> _queue;
-  private final AtomicInteger _pendingCount = new AtomicInteger();
-  private final DeactivationListener _deactivationListener;
-  private final ExecutionMonitor _executionMonitor;
+    private final Executor _executor;
+    private final UncaughtExceptionHandler _uncaughtExecutionHandler;
+    private final Runnable _executorLoop;
+    private final TaskQueue<PrioritizableRunnable> _queue;
+    private final AtomicInteger _pendingCount = new AtomicInteger();
+    private final DeactivationListener _deactivationListener;
+    private final ExecutionMonitor _executionMonitor;
 
-  public SerialExecutor(final Executor executor,
-      final UncaughtExceptionHandler uncaughtExecutionHandler,
-      final DeactivationListener deactivationListener,
-      final TaskQueue<PrioritizableRunnable> taskQueue,
-      final boolean drainSerialExecutorQueue,
-      final ExecutionMonitor executionMonitor) {
-    ArgumentUtil.requireNotNull(executor, "executor");
-    ArgumentUtil.requireNotNull(uncaughtExecutionHandler, "uncaughtExecutionHandler" );
-    ArgumentUtil.requireNotNull(deactivationListener, "deactivationListener" );
+    public SerialExecutor(final Executor executor,
+            final UncaughtExceptionHandler uncaughtExecutionHandler,
+            final DeactivationListener deactivationListener,
+            final TaskQueue<PrioritizableRunnable> taskQueue,
+            final boolean drainSerialExecutorQueue,
+            final ExecutionMonitor executionMonitor) {
+        ArgumentUtil.requireNotNull(executor, "executor");
+        ArgumentUtil.requireNotNull(uncaughtExecutionHandler, "uncaughtExecutionHandler");
+        ArgumentUtil.requireNotNull(deactivationListener, "deactivationListener");
 
-    _executor = executor;
-    _uncaughtExecutionHandler = uncaughtExecutionHandler;
-    _queue = taskQueue;
-    _deactivationListener = deactivationListener;
-    _executorLoop = drainSerialExecutorQueue ? new DrainingExecutorLoop() : new NonDrainingExecutorLoop();
-    _executionMonitor = executionMonitor;
-  }
-
-  public void execute(final PrioritizableRunnable runnable) {
-    _queue.add(runnable);
-    // Guarantees that execution loop is scheduled only once to the underlying executor.
-    // Also makes sure that all memory effects of last Runnable are visible to the next Runnable
-    // in case value returned by decrementAndGet == 0.
-    if (_pendingCount.getAndIncrement() == 0) {
-      tryExecuteLoop();
+        _executor = executor;
+        _uncaughtExecutionHandler = uncaughtExecutionHandler;
+        _queue = taskQueue;
+        _deactivationListener = deactivationListener;
+        _executorLoop = drainSerialExecutorQueue ? new DrainingExecutorLoop() : new NonDrainingExecutorLoop();
+        _executionMonitor = executionMonitor;
     }
-  }
 
-  /*
-   * This method acts as a happen-before relation between current thread and next Runnable that will
-   * be executed by this executor because of properties of underlying _executor.execute().
-   */
-  private void tryExecuteLoop() {
-    try {
-      _executor.execute(_executorLoop);
-    } catch (Throwable t) {
-      _uncaughtExecutionHandler.uncaughtException(t);
-    }
-  }
-
-  private class DrainingExecutorLoop implements Runnable {
-    @Override
-    public void run() {
-      // Entering state:
-      // - _queue.size() > 0
-      // - _pendingCount.get() > 0
-
-      final ExecutionMonitorState executionState = _executionMonitor != null ? _executionMonitor.getLocalMonitorState() : null;
-      for (;;) {
-        if (executionState != null) {
-          executionState.activate();
-        }
-        final Runnable runnable = _queue.poll();
-        try {
-          runnable.run();
-
-          // Deactivation listener is called before _pendingCount.decrementAndGet() so that
-          // it does not run concurrently with any other Runnable submitted to this Executor.
-          // _pendingCount.get() == 1 means that there are no more Runnables submitted to this
-          // executor waiting to be executed. Since _pendingCount can be changed in other threads
-          // in is possible to get _pendingCount.get() == 1 and _pendingCount.decrementAndGet() > 0
-          // to be true few lines below.
-          if (_pendingCount.get() == 1) {
-            _deactivationListener.deactivated();
-          }
-        } catch (Throwable t) {
-          _uncaughtExecutionHandler.uncaughtException(t);
-        } finally {
-          // Guarantees that execution loop is scheduled only once to the underlying executor.
-          // Also makes sure that all memory effects of last Runnable are visible to the next Runnable
-          // in case value returned by decrementAndGet == 0.
-          if (_pendingCount.decrementAndGet() == 0) {
-            break;
-          }
-        }
-      }
-      if (executionState != null) {
-        executionState.deactivate();
-      }
-    }
-  }
-
-  private class NonDrainingExecutorLoop implements Runnable {
-    @Override
-    public void run() {
-      // Entering state:
-      // - _queue.size() > 0
-      // - _pendingCount.get() > 0
-      final ExecutionMonitorState executionState = _executionMonitor != null ? _executionMonitor.getLocalMonitorState() : null;
-      if (executionState != null) {
-        executionState.activate();
-      }
-      final Runnable runnable = _queue.poll();
-      try {
-        runnable.run();
-
-        // Deactivation listener is called before _pendingCount.decrementAndGet() so that
-        // it does not run concurrently with any other Runnable submitted to this Executor.
-        // _pendingCount.get() == 1 means that there are no more Runnables submitted to this
-        // executor waiting to be executed. Since _pendingCount can be changed in other threads
-        // in is possible to get _pendingCount.get() == 1 and _pendingCount.decrementAndGet() > 0
-        // to be true few lines below.
-        if (_pendingCount.get() == 1) {
-          _deactivationListener.deactivated();
-        }
-      } catch (Throwable t) {
-        _uncaughtExecutionHandler.uncaughtException(t);
-      } finally {
+    public void execute(final PrioritizableRunnable runnable) {
+        _queue.add(runnable);
         // Guarantees that execution loop is scheduled only once to the underlying executor.
         // Also makes sure that all memory effects of last Runnable are visible to the next Runnable
         // in case value returned by decrementAndGet == 0.
-        if (_pendingCount.decrementAndGet() > 0) {
-          // Aside from it's obvious intent it also makes sure that all memory effects are visible
-          // to the next Runnable
-          tryExecuteLoop();
+        if (_pendingCount.getAndIncrement() == 0) {
+            tryExecuteLoop();
         }
-      }
-      if (executionState != null) {
-        executionState.deactivate();
-      }
     }
-  }
 
-  /**
-   * A priority queue which stores runnables to be executed within a {@link SerialExecutor}.
-   * The implementation has to make sure runnables are sorted in the descending order based
-   * on their priority.
-   */
-  public interface TaskQueue<T extends Prioritizable> {
-    void add(T value);
-    T poll();
-  }
+    /*
+     * This method acts as a happen-before relation between current thread and next Runnable that will
+     * be executed by this executor because of properties of underlying _executor.execute().
+     */
+    private void tryExecuteLoop() {
+        try {
+            _executor.execute(_executorLoop);
+        } catch (Throwable t) {
+            _uncaughtExecutionHandler.uncaughtException(t);
+        }
+    }
 
-  /*
-   * Deactivation listener is notified when this executor finished executing a Runnable
-   * and there are no other Runnables waiting in queue.
-   * It is executed sequentially with respect to other Runnables executed by this Executor.
-   */
-  interface DeactivationListener {
-    void deactivated();
-  }
+    // TODO: 2018/7/25 by zmyer
+    private class DrainingExecutorLoop implements Runnable {
+        @Override
+        public void run() {
+            // Entering state:
+            // - _queue.size() > 0
+            // - _pendingCount.get() > 0
+
+            final ExecutionMonitorState executionState =
+                    _executionMonitor != null ? _executionMonitor.getLocalMonitorState() : null;
+            for (; ; ) {
+                if (executionState != null) {
+                    executionState.activate();
+                }
+                final Runnable runnable = _queue.poll();
+                try {
+                    runnable.run();
+
+                    // Deactivation listener is called before _pendingCount.decrementAndGet() so that
+                    // it does not run concurrently with any other Runnable submitted to this Executor.
+                    // _pendingCount.get() == 1 means that there are no more Runnables submitted to this
+                    // executor waiting to be executed. Since _pendingCount can be changed in other threads
+                    // in is possible to get _pendingCount.get() == 1 and _pendingCount.decrementAndGet() > 0
+                    // to be true few lines below.
+                    if (_pendingCount.get() == 1) {
+                        _deactivationListener.deactivated();
+                    }
+                } catch (Throwable t) {
+                    _uncaughtExecutionHandler.uncaughtException(t);
+                } finally {
+                    // Guarantees that execution loop is scheduled only once to the underlying executor.
+                    // Also makes sure that all memory effects of last Runnable are visible to the next Runnable
+                    // in case value returned by decrementAndGet == 0.
+                    if (_pendingCount.decrementAndGet() == 0) {
+                        break;
+                    }
+                }
+            }
+            if (executionState != null) {
+                executionState.deactivate();
+            }
+        }
+    }
+
+    // TODO: 2018/7/25 by zmyer
+    private class NonDrainingExecutorLoop implements Runnable {
+        @Override
+        public void run() {
+            // Entering state:
+            // - _queue.size() > 0
+            // - _pendingCount.get() > 0
+            final ExecutionMonitorState executionState =
+                    _executionMonitor != null ? _executionMonitor.getLocalMonitorState() : null;
+            if (executionState != null) {
+                executionState.activate();
+            }
+            final Runnable runnable = _queue.poll();
+            try {
+                runnable.run();
+
+                // Deactivation listener is called before _pendingCount.decrementAndGet() so that
+                // it does not run concurrently with any other Runnable submitted to this Executor.
+                // _pendingCount.get() == 1 means that there are no more Runnables submitted to this
+                // executor waiting to be executed. Since _pendingCount can be changed in other threads
+                // in is possible to get _pendingCount.get() == 1 and _pendingCount.decrementAndGet() > 0
+                // to be true few lines below.
+                if (_pendingCount.get() == 1) {
+                    _deactivationListener.deactivated();
+                }
+            } catch (Throwable t) {
+                _uncaughtExecutionHandler.uncaughtException(t);
+            } finally {
+                // Guarantees that execution loop is scheduled only once to the underlying executor.
+                // Also makes sure that all memory effects of last Runnable are visible to the next Runnable
+                // in case value returned by decrementAndGet == 0.
+                if (_pendingCount.decrementAndGet() > 0) {
+                    // Aside from it's obvious intent it also makes sure that all memory effects are visible
+                    // to the next Runnable
+                    tryExecuteLoop();
+                }
+            }
+            if (executionState != null) {
+                executionState.deactivate();
+            }
+        }
+    }
+
+    /**
+     * A priority queue which stores runnables to be executed within a {@link SerialExecutor}.
+     * The implementation has to make sure runnables are sorted in the descending order based
+     * on their priority.
+     */
+    // TODO: 2018/7/25 by zmyer
+    public interface TaskQueue<T extends Prioritizable> {
+        void add(T value);
+
+        T poll();
+    }
+
+    /*
+     * Deactivation listener is notified when this executor finished executing a Runnable
+     * and there are no other Runnables waiting in queue.
+     * It is executed sequentially with respect to other Runnables executed by this Executor.
+     */
+    // TODO: 2018/7/25 by zmyer
+    interface DeactivationListener {
+        void deactivated();
+    }
 }

@@ -19,6 +19,7 @@ package com.linkedin.parseq.internal;
 /**
  * @author Chris Pettitt (cpettitt@linkedin.com)
  */
+// TODO: 2018/7/25 by zmyer
 public interface Prioritizable {
-  int getPriority();
+    int getPriority();
 }

@@ -10,14 +10,15 @@ package com.linkedin.parseq;
  *
  * @author Siddharth Sodhani (ssodhani@linkedin.com)
  */
+// TODO: 2018/7/25 by zmyer
 public interface TaskDescriptor {
 
-  /**
-   * Give class name which could correspond to generated lambda expressions etc infer appropriate description for it
-   * If it is unable to infer description, it returns className
-   *
-   * @param className
-   * @return description for task it can be inferred else returns className
-   */
-  String getDescription(String className);
+    /**
+     * Give class name which could correspond to generated lambda expressions etc infer appropriate description for it
+     * If it is unable to infer description, it returns className
+     *
+     * @param className
+     * @return description for task it can be inferred else returns className
+     */
+    String getDescription(String className);
 }

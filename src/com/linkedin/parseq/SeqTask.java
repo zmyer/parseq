@@ -32,7 +32,7 @@ import java.util.List;
  * Use {@link Tasks#seq(Iterable)} or {@link Tasks#seq(java.lang.Iterable)} to create
  * instances of this class.
  *
- * @deprecated  As of 2.0.0, replaced by {@link Task#map(String, com.linkedin.parseq.function.Function1) Task.map},
+ * @deprecated As of 2.0.0, replaced by {@link Task#map(String, com.linkedin.parseq.function.Function1) Task.map},
  * {@link Task#flatMap(String, com.linkedin.parseq.function.Function1) Task.flatMap},
  * {@link Task#andThen(String, Task) Task.andThen} and other methods in {@link Task}.
  * @author Chris Pettitt (cpettitt@linkedin.com)
@@ -42,44 +42,44 @@ import java.util.List;
  * @see Task#andThen(String, Task) Task.andThen
  * @see Task
  */
+// TODO: 2018/7/25 by zmyer
 @Deprecated
 /* package private */ class SeqTask<T> extends SystemHiddenTask<T> {
-  private volatile List<Task<?>> _tasks;
+    private volatile List<Task<?>> _tasks;
 
-  public SeqTask(final String name, final Iterable<? extends Task<?>> tasks) {
-    super(name);
-    List<Task<?>> taskList = new ArrayList<Task<?>>();
-    for (Task<?> task : tasks) {
-      taskList.add(task);
+    public SeqTask(final String name, final Iterable<? extends Task<?>> tasks) {
+        super(name);
+        List<Task<?>> taskList = new ArrayList<Task<?>>();
+        for (Task<?> task : tasks) {
+            taskList.add(task);
+        }
+
+        if (taskList.size() == 0) {
+            throw new IllegalArgumentException("No tasks to sequence!");
+        }
+
+        _tasks = Collections.unmodifiableList(taskList);
     }
 
-    if (taskList.size() == 0) {
-      throw new IllegalArgumentException("No tasks to sequence!");
+    @Override
+    protected Promise<? extends T> run(final Context context) throws Exception {
+        final SettablePromise<T> result = Promises.settable();
+
+        Task<?> prevTask = _tasks.get(0);
+        for (int i = 1; i < _tasks.size(); i++) {
+            final Task<?> currTask = _tasks.get(i);
+            context.after(prevTask).run(currTask);
+            prevTask = currTask;
+        }
+
+        // This is unsafe, but we don't have the ability to do type checking
+        // with varargs.
+        @SuppressWarnings("unchecked") final Task<T> typedPrevTask = (Task<T>) prevTask;
+        Promises.propagateResult(typedPrevTask, result);
+        context.run(_tasks.get(0));
+
+        _tasks = null;
+
+        return result;
     }
-
-    _tasks = Collections.unmodifiableList(taskList);
-  }
-
-  @Override
-  protected Promise<? extends T> run(final Context context) throws Exception {
-    final SettablePromise<T> result = Promises.settable();
-
-    Task<?> prevTask = _tasks.get(0);
-    for (int i = 1; i < _tasks.size(); i++) {
-      final Task<?> currTask = _tasks.get(i);
-      context.after(prevTask).run(currTask);
-      prevTask = currTask;
-    }
-
-    // This is unsafe, but we don't have the ability to do type checking
-    // with varargs.
-    @SuppressWarnings("unchecked")
-    final Task<T> typedPrevTask = (Task<T>) prevTask;
-    Promises.propagateResult(typedPrevTask, result);
-    context.run(_tasks.get(0));
-
-    _tasks = null;
-
-    return result;
-  }
 }

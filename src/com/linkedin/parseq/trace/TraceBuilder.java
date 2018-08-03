@@ -26,97 +26,99 @@ import java.util.Set;
 /**
  * @author Jaroslaw Odzga (jodzga@linkedin.com)
  */
+// TODO: 2018/7/25 by zmyer
 public class TraceBuilder {
 
-  static final long UNKNOWN_PLAN_ID = -1L;
-  static final String UNKNOWN_PLAN_CLASS = "unknown";
-  private static final int INITIAL_RELATIONSHIP_ARRAY_SIZE = 128;
-  private static final int INITIAL_BUILDER_ARRAY_SIZE = 128;
+    static final long UNKNOWN_PLAN_ID = -1L;
+    static final String UNKNOWN_PLAN_CLASS = "unknown";
+    private static final int INITIAL_RELATIONSHIP_ARRAY_SIZE = 128;
+    private static final int INITIAL_BUILDER_ARRAY_SIZE = 128;
 
-  private final int _maxTraceBuildersPerTrace;
+    private final int _maxTraceBuildersPerTrace;
 
-  private final String _planClass;
+    private final String _planClass;
 
-  private final Long _planId;
+    private final Long _planId;
 
-  private final ArrayList<TraceRelationship> _relationships;
-  private final ArrayList<ShallowTraceBuilder> _traceBuilders;
+    private final ArrayList<TraceRelationship> _relationships;
+    private final ArrayList<ShallowTraceBuilder> _traceBuilders;
 
-  // TODO: this constructor should be removed.
-  // Need to fix in the next major version release.
-  public TraceBuilder(int maxRelationshipsCount) {
-    this(maxRelationshipsCount, UNKNOWN_PLAN_CLASS, UNKNOWN_PLAN_ID);
-  }
-
-  public TraceBuilder(int maxRelationshipsCount, String planClass, Long planId) {
-    _relationships = new ArrayList<>(INITIAL_RELATIONSHIP_ARRAY_SIZE);
-    _traceBuilders = new ArrayList<>(INITIAL_BUILDER_ARRAY_SIZE);
-    _maxTraceBuildersPerTrace = maxRelationshipsCount;
-    _planClass = planClass;
-    _planId = planId;
-  }
-
-  public synchronized void addShallowTrace(final ShallowTraceBuilder shallowTrace) {
-    if (_traceBuilders.size() < _maxTraceBuildersPerTrace) {
-      _traceBuilders.add(shallowTrace);
-    }
-  }
-
-  public synchronized void addRelationship(final Relationship relationship, final ShallowTraceBuilder from,
-      final ShallowTraceBuilder to) {
-    if (_relationships.size() < _maxTraceBuildersPerTrace) {
-      TraceRelationship rel = new TraceRelationship(from, to, relationship);
-      _relationships.add(rel);
-    }
-  }
-
-  public synchronized Trace build() {
-
-    final Map<Long, ShallowTrace> traceMap = new HashMap<>();
-    final Set<TraceRelationship> relationships = new HashSet<>();
-
-    for (ShallowTraceBuilder builder : _traceBuilders) {
-      traceMap.put(builder.getId(), builder.build());
+    // TODO: this constructor should be removed.
+    // Need to fix in the next major version release.
+    public TraceBuilder(int maxRelationshipsCount) {
+        this(maxRelationshipsCount, UNKNOWN_PLAN_CLASS, UNKNOWN_PLAN_ID);
     }
 
-    for (TraceRelationship rel : _relationships) {
-
-      traceMap.computeIfAbsent(rel._from.getId(), key -> rel._from.build());
-      traceMap.computeIfAbsent(rel._to.getId(), key -> rel._to.build());
-
-      switch (rel.getRelationhsip()) {
-        case SUCCESSOR_OF:
-          relationships.remove(new TraceRelationship(rel._from, rel._to, Relationship.POSSIBLE_SUCCESSOR_OF));
-          relationships.add(rel);
-          break;
-        case POSSIBLE_SUCCESSOR_OF:
-          if (!relationships.contains(new TraceRelationship(rel._from, rel._to, Relationship.SUCCESSOR_OF))) {
-            relationships.add(rel);
-          }
-          break;
-        case CHILD_OF:
-          relationships.remove(new TraceRelationship(rel._to, rel._from, Relationship.POTENTIAL_PARENT_OF));
-          relationships.add(new TraceRelationship(rel._to, rel._from, Relationship.PARENT_OF));
-          break;
-        case POTENTIAL_CHILD_OF:
-          if (!relationships.contains(new TraceRelationship(rel._to, rel._from, Relationship.PARENT_OF))) {
-            relationships.add(new TraceRelationship(rel._to, rel._from, Relationship.POTENTIAL_PARENT_OF));
-          }
-          break;
-        case POTENTIAL_PARENT_OF:
-          if (!relationships.contains(new TraceRelationship(rel._from, rel._to, Relationship.PARENT_OF))) {
-            relationships.add(rel);
-          }
-          break;
-        case PARENT_OF:
-          relationships.remove(new TraceRelationship(rel._from, rel._to, Relationship.POTENTIAL_PARENT_OF));
-          relationships.add(rel);
-          break;
-        default:
-          throw new IllegalStateException("Unknown relationship type: " + rel);
-      }
+    public TraceBuilder(int maxRelationshipsCount, String planClass, Long planId) {
+        _relationships = new ArrayList<>(INITIAL_RELATIONSHIP_ARRAY_SIZE);
+        _traceBuilders = new ArrayList<>(INITIAL_BUILDER_ARRAY_SIZE);
+        _maxTraceBuildersPerTrace = maxRelationshipsCount;
+        _planClass = planClass;
+        _planId = planId;
     }
 
-    return new Trace(traceMap, relationships, _planClass, _planId);
-  }
+    public synchronized void addShallowTrace(final ShallowTraceBuilder shallowTrace) {
+        if (_traceBuilders.size() < _maxTraceBuildersPerTrace) {
+            _traceBuilders.add(shallowTrace);
+        }
+    }
+
+    // TODO: 2018/7/25 by zmyer
+    public synchronized void addRelationship(final Relationship relationship, final ShallowTraceBuilder from,
+            final ShallowTraceBuilder to) {
+        if (_relationships.size() < _maxTraceBuildersPerTrace) {
+            TraceRelationship rel = new TraceRelationship(from, to, relationship);
+            _relationships.add(rel);
+        }
+    }
+
+    public synchronized Trace build() {
+
+        final Map<Long, ShallowTrace> traceMap = new HashMap<>();
+        final Set<TraceRelationship> relationships = new HashSet<>();
+
+        for (ShallowTraceBuilder builder : _traceBuilders) {
+            traceMap.put(builder.getId(), builder.build());
+        }
+
+        for (TraceRelationship rel : _relationships) {
+
+            traceMap.computeIfAbsent(rel._from.getId(), key -> rel._from.build());
+            traceMap.computeIfAbsent(rel._to.getId(), key -> rel._to.build());
+
+            switch (rel.getRelationhsip()) {
+            case SUCCESSOR_OF:
+                relationships.remove(new TraceRelationship(rel._from, rel._to, Relationship.POSSIBLE_SUCCESSOR_OF));
+                relationships.add(rel);
+                break;
+            case POSSIBLE_SUCCESSOR_OF:
+                if (!relationships.contains(new TraceRelationship(rel._from, rel._to, Relationship.SUCCESSOR_OF))) {
+                    relationships.add(rel);
+                }
+                break;
+            case CHILD_OF:
+                relationships.remove(new TraceRelationship(rel._to, rel._from, Relationship.POTENTIAL_PARENT_OF));
+                relationships.add(new TraceRelationship(rel._to, rel._from, Relationship.PARENT_OF));
+                break;
+            case POTENTIAL_CHILD_OF:
+                if (!relationships.contains(new TraceRelationship(rel._to, rel._from, Relationship.PARENT_OF))) {
+                    relationships.add(new TraceRelationship(rel._to, rel._from, Relationship.POTENTIAL_PARENT_OF));
+                }
+                break;
+            case POTENTIAL_PARENT_OF:
+                if (!relationships.contains(new TraceRelationship(rel._from, rel._to, Relationship.PARENT_OF))) {
+                    relationships.add(rel);
+                }
+                break;
+            case PARENT_OF:
+                relationships.remove(new TraceRelationship(rel._from, rel._to, Relationship.POTENTIAL_PARENT_OF));
+                relationships.add(rel);
+                break;
+            default:
+                throw new IllegalStateException("Unknown relationship type: " + rel);
+            }
+        }
+
+        return new Trace(traceMap, relationships, _planClass, _planId);
+    }
 }

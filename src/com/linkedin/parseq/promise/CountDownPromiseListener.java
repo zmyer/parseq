@@ -25,21 +25,22 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * @author Chris Pettitt (cpettitt@linkedin.com)
  */
+// TODO: 2018/7/26 by zmyer
 public class CountDownPromiseListener<T> implements PromiseListener<T> {
-  private final AtomicInteger _counter;
-  private final SettablePromise<T> _promise;
-  private final T _value;
+    private final AtomicInteger _counter;
+    private final SettablePromise<T> _promise;
+    private final T _value;
 
-  public CountDownPromiseListener(final int count, final SettablePromise<T> promise, final T value) {
-    _counter = new AtomicInteger(count);
-    _promise = promise;
-    _value = value;
-  }
-
-  @Override
-  public void onResolved(Promise<T> resolvedPromise) {
-    if (_counter.decrementAndGet() == 0) {
-      _promise.done(_value);
+    public CountDownPromiseListener(final int count, final SettablePromise<T> promise, final T value) {
+        _counter = new AtomicInteger(count);
+        _promise = promise;
+        _value = value;
     }
-  }
+
+    @Override
+    public void onResolved(Promise<T> resolvedPromise) {
+        if (_counter.decrementAndGet() == 0) {
+            _promise.done(_value);
+        }
+    }
 }

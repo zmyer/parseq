@@ -10,14 +10,14 @@ import java.util.concurrent.TimeUnit;
  */
 public class PlatformClock implements Clock {
 
-  @Override
-  public long nanoTime() {
-    return System.nanoTime();
-  }
+    @Override
+    public long nanoTime() {
+        return System.nanoTime();
+    }
 
-  @Override
-  public void sleepNano(long nao) throws InterruptedException {
-    TimeUnit.NANOSECONDS.sleep(nao);
-  }
+    @Override
+    public void sleepNano(long nao) throws InterruptedException {
+        TimeUnit.NANOSECONDS.sleep(nao);
+    }
 
 }

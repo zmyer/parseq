@@ -5,6 +5,6 @@ package com.linkedin.parseq.internal;
  */
 public interface PlanCompletionListener {
 
-  void onPlanCompleted(PlanContext planContext);
+    void onPlanCompleted(PlanContext planContext);
 
 }

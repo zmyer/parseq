@@ -27,14 +27,15 @@ package com.linkedin.parseq.promise;
  * @author Jaroslaw Odzga (jodzga@linkedin.com)
  * @see Promise#addListener(PromiseListener)
  */
+// TODO: 2018/7/25 by zmyer
 @FunctionalInterface
 public interface PromiseListener<P> {
-  /**
-   * A callback method that is invoked when the promise completes. The code
-   * in this method should not block.
-   *
-   * @param promise the promise containing result. It is not guaranteed that it is exact same
-   * instance the {@code PromiseListener} was registered with.
-   */
-  void onResolved(Promise<P> promise);
+    /**
+     * A callback method that is invoked when the promise completes. The code
+     * in this method should not block.
+     *
+     * @param promise the promise containing result. It is not guaranteed that it is exact same
+     * instance the {@code PromiseListener} was registered with.
+     */
+    void onResolved(Promise<P> promise);
 }

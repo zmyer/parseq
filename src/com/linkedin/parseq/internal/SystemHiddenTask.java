@@ -12,9 +12,10 @@ import com.linkedin.parseq.BaseTask;
  * {@link com.linkedin.parseq.Task#async(String, com.linkedin.parseq.function.Function1, boolean) Task.async}.
  * @see com.linkedin.parseq.Task#async(String, com.linkedin.parseq.function.Function1, boolean) Task.async
  */
+// TODO: 2018/7/25 by zmyer
 public abstract class SystemHiddenTask<T> extends BaseTask<T> {
-  protected SystemHiddenTask(String name) {
-    super(name);
-    _shallowTraceBuilder.setSystemHidden(true);
-  }
+    protected SystemHiddenTask(String name) {
+        super(name);
+        _shallowTraceBuilder.setSystemHidden(true);
+    }
 }

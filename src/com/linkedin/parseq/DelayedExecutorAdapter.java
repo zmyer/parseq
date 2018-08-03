@@ -1,8 +1,6 @@
 package com.linkedin.parseq;
 
-import com.linkedin.parseq.DelayedExecutor;
 import com.linkedin.parseq.internal.CancellableScheduledFuture;
-import com.linkedin.parseq.Cancellable;
 
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -14,15 +12,16 @@ import java.util.concurrent.TimeUnit;
  *
  * @author Chris Pettitt
  */
+// TODO: 2018/7/25 by zmyer
 public class DelayedExecutorAdapter implements DelayedExecutor {
-  private final ScheduledExecutorService _scheduler;
+    private final ScheduledExecutorService _scheduler;
 
-  public DelayedExecutorAdapter(final ScheduledExecutorService scheduler) {
-    _scheduler = scheduler;
-  }
+    public DelayedExecutorAdapter(final ScheduledExecutorService scheduler) {
+        _scheduler = scheduler;
+    }
 
-  @Override
-  public Cancellable schedule(final long delay, final TimeUnit unit, final Runnable command) {
-    return new CancellableScheduledFuture(_scheduler.schedule(command, delay, unit));
-  }
+    @Override
+    public Cancellable schedule(final long delay, final TimeUnit unit, final Runnable command) {
+        return new CancellableScheduledFuture(_scheduler.schedule(command, delay, unit));
+    }
 }

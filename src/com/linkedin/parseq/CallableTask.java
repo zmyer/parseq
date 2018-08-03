@@ -30,35 +30,35 @@ import java.util.concurrent.Callable;
  * Use {@link Tasks#callable(String, java.util.concurrent.Callable)} to create
  * instances of this class.
  *
- * @deprecated  As of 2.0.0, replaced by {@link Task#callable(String, Callable) Task.callable}.
+ * @deprecated As of 2.0.0, replaced by {@link Task#callable(String, Callable) Task.callable}.
  * @author Chris Pettitt (cpettitt@linkedin.com)
  * @see Task#callable(String, Callable) Task.callable
  */
 @Deprecated
 public class CallableTask<T> extends BaseTask<T> {
-  private final ThrowableCallable<? extends T> _callable;
+    private final ThrowableCallable<? extends T> _callable;
 
-  public CallableTask(final String name, final Callable<? extends T> callable) {
-    this(name, adaptCallable(callable));
-  }
+    public CallableTask(final String name, final Callable<? extends T> callable) {
+        this(name, adaptCallable(callable));
+    }
 
-  public CallableTask(final String name, final ThrowableCallable<? extends T> callable) {
-    super(name);
-    ArgumentUtil.requireNotNull(callable, "callable");
-    _callable = callable;
-  }
+    public CallableTask(final String name, final ThrowableCallable<? extends T> callable) {
+        super(name);
+        ArgumentUtil.requireNotNull(callable, "callable");
+        _callable = callable;
+    }
 
-  @Override
-  protected Promise<? extends T> run(final Context context) throws Throwable {
-    return Promises.value(_callable.call());
-  }
+    private static <T> ThrowableCallable<T> adaptCallable(final Callable<? extends T> callable) {
+        return new ThrowableCallable<T>() {
+            @Override
+            public T call() throws Throwable {
+                return callable.call();
+            }
+        };
+    }
 
-  private static <T> ThrowableCallable<T> adaptCallable(final Callable<? extends T> callable) {
-    return new ThrowableCallable<T>() {
-      @Override
-      public T call() throws Throwable {
-        return callable.call();
-      }
-    };
-  }
+    @Override
+    protected Promise<? extends T> run(final Context context) throws Throwable {
+        return Promises.value(_callable.call());
+    }
 }

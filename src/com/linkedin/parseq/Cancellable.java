@@ -21,15 +21,16 @@ package com.linkedin.parseq;
  *
  * @author Chris Pettitt (cpettitt@linkedin.com)
  */
+// TODO: 2018/7/25 by zmyer
 public interface Cancellable {
-  /**
-   * Attempts to cancel the object with the given reason. Check the return
-   * value to determine if cancellation was successful. Subsequent calls to
-   * cancel will always return {@code false}.
-   *
-   * @param reason an Exception indicating why this object was cancelled
-   * @return {@code true} iff the object was successfully cancelled as a result
-   *         of this invocation.
-   */
-  boolean cancel(Exception reason);
+    /**
+     * Attempts to cancel the object with the given reason. Check the return
+     * value to determine if cancellation was successful. Subsequent calls to
+     * cancel will always return {@code false}.
+     *
+     * @param reason an Exception indicating why this object was cancelled
+     * @return {@code true} iff the object was successfully cancelled as a result
+     *         of this invocation.
+     */
+    boolean cancel(Exception reason);
 }

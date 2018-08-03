@@ -24,15 +24,16 @@ import java.util.concurrent.ScheduledFuture;
 /**
  * @author Chris Pettitt (cpettitt@linkedin.com)
  */
+// TODO: 2018/7/25 by zmyer
 public class CancellableScheduledFuture implements Cancellable {
-  private final ScheduledFuture<?> _future;
+    private final ScheduledFuture<?> _future;
 
-  public CancellableScheduledFuture(final ScheduledFuture<?> future) {
-    _future = future;
-  }
+    public CancellableScheduledFuture(final ScheduledFuture<?> future) {
+        _future = future;
+    }
 
-  @Override
-  public boolean cancel(final Exception reason) {
-    return _future.cancel(false);
-  }
+    @Override
+    public boolean cancel(final Exception reason) {
+        return _future.cancel(false);
+    }
 }

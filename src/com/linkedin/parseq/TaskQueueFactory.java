@@ -26,5 +26,5 @@ import com.linkedin.parseq.internal.SerialExecutor;
  * @author Ang Xu
  */
 public interface TaskQueueFactory {
-  SerialExecutor.TaskQueue<PrioritizableRunnable> newTaskQueue();
+    SerialExecutor.TaskQueue<PrioritizableRunnable> newTaskQueue();
 }

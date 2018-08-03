@@ -22,11 +22,12 @@ import com.linkedin.parseq.Priority;
 /**
  * @author Chris Pettitt (cpettitt@linkedin.com)
  */
+// TODO: 2018/7/25 by zmyer
 public interface PrioritizableRunnable extends Runnable, Prioritizable {
 
-  @Override
-  default int getPriority() {
-    return Priority.DEFAULT_PRIORITY;
-  }
+    @Override
+    default int getPriority() {
+        return Priority.DEFAULT_PRIORITY;
+    }
 
 }

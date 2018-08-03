@@ -16,10 +16,10 @@
 
 package com.linkedin.parseq.internal;
 
-import java.util.concurrent.ConcurrentLinkedDeque;
-
 import com.linkedin.parseq.Priority;
 import com.linkedin.parseq.internal.SerialExecutor.TaskQueue;
+
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 /**
  * {@link TaskQueue} implementation that recognizes only two classes of priorities:
@@ -43,21 +43,22 @@ import com.linkedin.parseq.internal.SerialExecutor.TaskQueue;
  * @author Jaroslaw Odzga (jodzga@linkedin.com)
  *
  */
+// TODO: 2018/7/25 by zmye
 public class LIFOBiPriorityQueue<T extends Prioritizable> implements SerialExecutor.TaskQueue<T> {
 
-  private final ConcurrentLinkedDeque<T> _highPriority = new ConcurrentLinkedDeque<>();
-  private final ConcurrentLinkedDeque<T> _lowPriority = new ConcurrentLinkedDeque<>();
+    private final ConcurrentLinkedDeque<T> _highPriority = new ConcurrentLinkedDeque<>();
+    private final ConcurrentLinkedDeque<T> _lowPriority = new ConcurrentLinkedDeque<>();
 
-  public void add(T value) {
-    if (value.getPriority() > Priority.DEFAULT_PRIORITY) {
-      _highPriority.addLast(value);
-    } else {
-      _lowPriority.addFirst(value);
+    public void add(T value) {
+        if (value.getPriority() > Priority.DEFAULT_PRIORITY) {
+            _highPriority.addLast(value);
+        } else {
+            _lowPriority.addFirst(value);
+        }
     }
-  }
 
-  public T poll() {
-    T highPriority = _highPriority.pollFirst();
-    return (highPriority != null) ? highPriority : _lowPriority.pollFirst();
-  }
+    public T poll() {
+        T highPriority = _highPriority.pollFirst();
+        return (highPriority != null) ? highPriority : _lowPriority.pollFirst();
+    }
 }

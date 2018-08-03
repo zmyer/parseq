@@ -11,8 +11,9 @@ import com.linkedin.parseq.EngineBuilder;
  * @author Jaroslaw Odzga (jodzga@linkedin.com)
  *
  */
+// TODO: 2018/7/25 by zmyer
 public interface PlanDeactivationListener {
 
-  void onPlanDeactivated(PlanContext planContext);
+    void onPlanDeactivated(PlanContext planContext);
 
 }

@@ -25,42 +25,43 @@ import java.util.concurrent.atomic.AtomicLong;
  * @author Chris Pettitt (cpettitt@linkedin.com)
  */
 public class FIFOPriorityQueue<T extends Prioritizable> implements SerialExecutor.TaskQueue<T> {
-  private final BlockingQueue<Entry<T>> _queue = new PriorityBlockingQueue<>();
-  private final AtomicLong _sequenceNumber = new AtomicLong();
+    private final BlockingQueue<Entry<T>> _queue = new PriorityBlockingQueue<>();
+    private final AtomicLong _sequenceNumber = new AtomicLong();
 
-  public FIFOPriorityQueue() {}
-
-  public void add(T value) {
-    _queue.add(new Entry<T>(_sequenceNumber.getAndIncrement(), value));
-  }
-
-  public T poll() {
-    final Entry<T> entry = _queue.poll();
-    return entry == null ? null : entry._value;
-  }
-
-  private static class Entry<T extends Prioritizable> implements Comparable<Entry<T>> {
-    private final long _sequenceNumber;
-    private final T _value;
-
-    private Entry(final long sequenceNumber, final T value) {
-      _sequenceNumber = sequenceNumber;
-      _value = value;
+    public FIFOPriorityQueue() {
     }
 
-    @Override
-    public int compareTo(final Entry<T> o) {
-      final int comp = compare(o._value.getPriority(), _value.getPriority());
-      return comp == 0 ? compare(_sequenceNumber, o._sequenceNumber) : comp;
+    public void add(T value) {
+        _queue.add(new Entry<T>(_sequenceNumber.getAndIncrement(), value));
     }
 
-    private int compare(final long lhs, final long rhs) {
-      if (lhs < rhs) {
-        return -1;
-      } else if (lhs > rhs) {
-        return 1;
-      }
-      return 0;
+    public T poll() {
+        final Entry<T> entry = _queue.poll();
+        return entry == null ? null : entry._value;
     }
-  }
+
+    private static class Entry<T extends Prioritizable> implements Comparable<Entry<T>> {
+        private final long _sequenceNumber;
+        private final T _value;
+
+        private Entry(final long sequenceNumber, final T value) {
+            _sequenceNumber = sequenceNumber;
+            _value = value;
+        }
+
+        @Override
+        public int compareTo(final Entry<T> o) {
+            final int comp = compare(o._value.getPriority(), _value.getPriority());
+            return comp == 0 ? compare(_sequenceNumber, o._sequenceNumber) : comp;
+        }
+
+        private int compare(final long lhs, final long rhs) {
+            if (lhs < rhs) {
+                return -1;
+            } else if (lhs > rhs) {
+                return 1;
+            }
+            return 0;
+        }
+    }
 }

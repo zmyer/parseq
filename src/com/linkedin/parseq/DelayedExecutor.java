@@ -18,22 +18,21 @@ package com.linkedin.parseq;
 
 import java.util.concurrent.TimeUnit;
 
-import com.linkedin.parseq.Cancellable;
-
 
 /**
  * An object that allows a task to be scheduled for execution after some delay.
  *
  * @author Chris Pettitt (cpettitt@linkedin.com)
  */
+// TODO: 2018/7/25 by zmyer
 public interface DelayedExecutor {
-  /**
-   * Schedules a command to execute after some period of delay.
-   *
-   * @param delay the amount of time to wait before executing the command
-   * @param unit the time unit for the delay parameter
-   * @param command the command to execute
-   * @return a handle that can be used to cancel a future if it has not already run.
-   */
-  Cancellable schedule(long delay, TimeUnit unit, Runnable command);
+    /**
+     * Schedules a command to execute after some period of delay.
+     *
+     * @param delay the amount of time to wait before executing the command
+     * @param unit the time unit for the delay parameter
+     * @param command the command to execute
+     * @return a handle that can be used to cancel a future if it has not already run.
+     */
+    Cancellable schedule(long delay, TimeUnit unit, Runnable command);
 }

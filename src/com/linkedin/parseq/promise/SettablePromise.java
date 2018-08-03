@@ -21,5 +21,6 @@ package com.linkedin.parseq.promise;
  *
  * @author Chris Pettitt (cpettitt@linkedin.com)
  */
+// TODO: 2018/7/26 by zmyer
 public interface SettablePromise<P> extends Promise<P>, Settable<P> {
 }

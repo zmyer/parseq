@@ -25,53 +25,54 @@ import java.util.concurrent.TimeUnit;
  *
  * @author Chris Pettitt (cpettitt@linkedin.com)
  */
+// TODO: 2018/7/25 by zmyer
 public class DelegatingPromise<T> implements Promise<T> {
-  private final Promise<T> _delegate;
+    private final Promise<T> _delegate;
 
-  public DelegatingPromise(final Promise<T> delegate) {
-    _delegate = delegate;
-  }
+    public DelegatingPromise(final Promise<T> delegate) {
+        _delegate = delegate;
+    }
 
-  @Override
-  public T get() throws PromiseException {
-    return _delegate.get();
-  }
+    @Override
+    public T get() throws PromiseException {
+        return _delegate.get();
+    }
 
-  @Override
-  public Throwable getError() {
-    return _delegate.getError();
-  }
+    @Override
+    public Throwable getError() {
+        return _delegate.getError();
+    }
 
-  public T getOrDefault(final T defaultValue) {
-    return _delegate.getOrDefault(defaultValue);
-  }
+    public T getOrDefault(final T defaultValue) {
+        return _delegate.getOrDefault(defaultValue);
+    }
 
-  @Override
-  public void await() throws InterruptedException {
-    _delegate.await();
-  }
+    @Override
+    public void await() throws InterruptedException {
+        _delegate.await();
+    }
 
-  @Override
-  public boolean await(final long time, final TimeUnit unit) throws InterruptedException {
-    return _delegate.await(time, unit);
-  }
+    @Override
+    public boolean await(final long time, final TimeUnit unit) throws InterruptedException {
+        return _delegate.await(time, unit);
+    }
 
-  @Override
-  public void addListener(final PromiseListener<T> listener) {
-    _delegate.addListener(listener);
-  }
+    @Override
+    public void addListener(final PromiseListener<T> listener) {
+        _delegate.addListener(listener);
+    }
 
-  @Override
-  public boolean isDone() {
-    return _delegate.isDone();
-  }
+    @Override
+    public boolean isDone() {
+        return _delegate.isDone();
+    }
 
-  @Override
-  public boolean isFailed() {
-    return _delegate.isFailed();
-  }
+    @Override
+    public boolean isFailed() {
+        return _delegate.isFailed();
+    }
 
-  protected Promise<T> getDelegate() {
-    return _delegate;
-  }
+    protected Promise<T> getDelegate() {
+        return _delegate;
+    }
 }
